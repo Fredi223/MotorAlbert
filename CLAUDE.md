@@ -10,7 +10,7 @@ dependencias, y limpieza de código muerto/rutas hardcodeadas.
 
 ## Requisitos de la asignatura
 
-El profesor exige un toolchain específico, documentado en `Docs/Project_tools.pdf`.
+El profesor exige un toolchain específico, documentado en `docs/project-tools.pdf`.
 No usar alternativas aunque sean más cómodas (ej. proyecto de Visual Studio suelto,
 vcpkg en modo clásico, etc.) — el objetivo es cumplir exactamente lo pedido:
 
@@ -19,7 +19,7 @@ vcpkg en modo clásico, etc.) — el objetivo es cumplir exactamente lo pedido:
 - **vcpkg en modo manifest**: `vcpkg.json` + `vcpkg-configuration.json`, sin instalar
   dependencias manualmente ni depender de una carpeta de vcpkg fuera del repo.
 
-Antes de proponer cualquier alternativa de tooling, consulta `Docs/Project_tools.pdf`.
+Antes de proponer cualquier alternativa de tooling, consulta `docs/project-tools.pdf`.
 
 ## Dependencias del motor
 
