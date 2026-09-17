@@ -974,8 +974,17 @@ int main(int argc, char* argv[])
                             }
                             else if (!go.meshComp.mesh.texturePath.empty())
                             {
+                                // mesh.texturePath viene de Assimp tal como esta guardado en el
+                                // material del FBX: normalmente solo el nombre de archivo, sin
+                                // directorio. Se recompone contra la carpeta del .fbx soltado
+                                // (filePath), no contra el CWD del proceso.
+                                std::string textureDir = (lastSlash == std::string::npos)
+                                    ? std::string()
+                                    : filePath.substr(0, lastSlash + 1);
+                                std::string textureFullPath = textureDir + go.meshComp.mesh.texturePath;
+
                                 int w, h, channels;
-                                unsigned char* img = stbi_load(go.meshComp.mesh.texturePath.c_str(), &w, &h, &channels, 0);
+                                unsigned char* img = stbi_load(textureFullPath.c_str(), &w, &h, &channels, 0);
                                 if (img)
                                 {
                                     GLuint tex;
@@ -992,14 +1001,14 @@ int main(int argc, char* argv[])
                                     stbi_image_free(img);
 
                                     go.texComp.textureID = tex;
-                                    go.texComp.path = go.meshComp.mesh.texturePath;
+                                    go.texComp.path = textureFullPath;
                                     go.meshComp.mesh.textureID = tex;
                                 }
                                 else
                                 {
                                     go.texComp.textureID = checkerTexture;
                                     go.texComp.path.clear();
-                                    Console::LogInfo("No se pudo cargar textura desde mesh.texturePath: %s", go.meshComp.mesh.texturePath.c_str());
+                                    Console::LogInfo("No se pudo cargar textura desde %s", textureFullPath.c_str());
                                 }
                             }
                             else
