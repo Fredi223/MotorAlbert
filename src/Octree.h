@@ -24,6 +24,7 @@ public:
     ~Octree();
 
     void Clear();
+    void Rebuild(const glm::vec3& min, const glm::vec3& max);
     void Insert(GameObject* go);
 
     void Query(const glm::vec3& qMin, const glm::vec3& qMax,

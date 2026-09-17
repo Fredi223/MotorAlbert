@@ -766,13 +766,25 @@ int main(int argc, char* argv[])
     auto RebuildOctree = [&]()
         {
             glm::vec3 minB, maxB;
-            ComputeSceneAABB(gameObjects, minB, maxB);
 
-            sceneOctree.Clear();
+            if (gameObjects.empty())
+            {
+                // ComputeSceneAABB no tiene objetos de los que sacar limites
+                // reales (degeneraria a +-infinito). Usamos los mismos limites
+                // fijos que ya se usan para la query de dibujado (frustumMin/Max).
+                minB = glm::vec3(-1000.0f);
+                maxB = glm::vec3(1000.0f);
+            }
+            else
+            {
+                ComputeSceneAABB(gameObjects, minB, maxB);
+            }
+
+            sceneOctree.Rebuild(minB, maxB);
 
             for (auto& go : gameObjects)
             {
-                go.UpdateWorldAABB();  
+                go.UpdateWorldAABB();
                 sceneOctree.Insert(&go);
             }
 

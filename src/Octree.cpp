@@ -34,6 +34,17 @@ void Octree::Clear()
 
 // ------------------------------------------------------------
 
+void Octree::Rebuild(const glm::vec3& min, const glm::vec3& max)
+{
+    Clear();
+
+    root = new OctreeNode();
+    root->min = min;
+    root->max = max;
+}
+
+// ------------------------------------------------------------
+
 void Octree::Insert(GameObject* go)
 {
     Insert(root, go, 0);
