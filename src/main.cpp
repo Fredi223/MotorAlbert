@@ -113,6 +113,7 @@ layout (location = 1) in vec3 aNormal;
 uniform mat4 uModel;
 uniform mat4 uView;
 uniform mat4 uProjection;
+uniform float uNormalLength;
 
 out vec3 vStart;
 out vec3 vEnd;
@@ -120,7 +121,7 @@ out vec3 vEnd;
 void main()
 {
     vStart = vec3(uModel * vec4(aPos, 1.0));
-    vEnd = vec3(uModel * vec4(aPos + aNormal * 0.1, 1.0));
+    vEnd = vec3(uModel * vec4(aPos + aNormal * uNormalLength, 1.0));
 }
 )";
 
@@ -150,7 +151,7 @@ const char* normalFragmentShaderSrc = R"(
 out vec4 FragColor;
 void main()
 {
-    FragColor = vec4(1.0, 0.0, 0.0, 1.0); // rojo
+    FragColor = vec4(0.0, 1.0, 0.0, 1.0); // verde brillante: mas contraste que el rojo sobre materiales calidos
 }
 )";
 
@@ -192,8 +193,9 @@ float mouseSensitivity = 0.1f;
 bool mouseLeftPressed = false;
 int selectedObject = -1;
 bool showNormals = true;
-Uint32 lastNormalsToggleMs = 0; 
-const Uint32 NORMALS_TOGGLE_DEBOUNCE = 150; 
+Uint32 lastNormalsToggleMs = 0;
+const Uint32 NORMALS_TOGGLE_DEBOUNCE = 150;
+const float NORMAL_LENGTH_PERCENT = 0.03f; // % de la diagonal del AABB local de la malla
 
 // ============================================================
 // INICIALIZACIÓN DE SDL + OpenGL
@@ -720,6 +722,7 @@ int main(int argc, char* argv[])
     GLint normalUModelLoc = glGetUniformLocation(normalShaderProgram, "uModel");
     GLint normalUViewLoc = glGetUniformLocation(normalShaderProgram, "uView");
     GLint normalUProjLoc = glGetUniformLocation(normalShaderProgram, "uProjection");
+    GLint normalULengthLoc = glGetUniformLocation(normalShaderProgram, "uNormalLength");
     // ========================================================
     // MATRICES DE CÁMARA
     // ========================================================
@@ -1496,6 +1499,12 @@ int main(int argc, char* argv[])
                 glUniformMatrix4fv(normalUModelLoc, 1, GL_FALSE, glm::value_ptr(model));
                 glUniformMatrix4fv(normalUViewLoc, 1, GL_FALSE, glm::value_ptr(view));
                 glUniformMatrix4fv(normalUProjLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+                // Offset proporcional al AABB local de la malla (no un valor fijo),
+                // para que se vea razonable tanto en un modelo diminuto como en uno enorme.
+                float localDiag = glm::length(go.aabbMax - go.aabbMin);
+                glUniform1f(normalULengthLoc, localDiag * NORMAL_LENGTH_PERCENT);
+
                 go.meshComp.mesh.DrawNormals();
                 glUseProgram(shaderProgram);
             }
