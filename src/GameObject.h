@@ -60,8 +60,6 @@ struct GameObject
     glm::vec3 worldAabbMax{ 0.0f };
 
     // --- Normals debug ---
-    bool showMeshNormals = false;
-
     enum NormalsMode
     {
         NM_UseGlobal = 0,

@@ -96,20 +96,7 @@ void Mesh::DrawNormals() const
     if (VAO == 0) return;
 
     glBindVertexArray(VAO);
-
-    // TODO: reescribir con VAO/VBO + shader, immediate mode no soportado en Core Profile
-    // glBegin(GL_LINES);
-    for (size_t i = 0; i < vertices.size(); i += 11)
-    {
-        glm::vec3 pos(vertices[i + 0], vertices[i + 1], vertices[i + 2]);
-        glm::vec3 norm(vertices[i + 3], vertices[i + 4], vertices[i + 5]);
-        glm::vec3 end = pos + norm * 0.1f;
-
-        // glVertex3fv(glm::value_ptr(pos));
-        // glVertex3fv(glm::value_ptr(end));
-    }
-    // glEnd();
-        
+    glDrawArrays(GL_POINTS, 0, (GLsizei)vertexCount);
     glBindVertexArray(0);
 }
 

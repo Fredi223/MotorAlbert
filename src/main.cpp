@@ -716,6 +716,10 @@ int main(int argc, char* argv[])
     GLint uModelLoc = glGetUniformLocation(shaderProgram, "uModel");
     GLint uViewLoc = glGetUniformLocation(shaderProgram, "uView");
     GLint uProjLoc = glGetUniformLocation(shaderProgram, "uProjection");
+
+    GLint normalUModelLoc = glGetUniformLocation(normalShaderProgram, "uModel");
+    GLint normalUViewLoc = glGetUniformLocation(normalShaderProgram, "uView");
+    GLint normalUProjLoc = glGetUniformLocation(normalShaderProgram, "uProjection");
     // ========================================================
     // MATRICES DE CÁMARA
     // ========================================================
@@ -1258,14 +1262,12 @@ int main(int argc, char* argv[])
                     {
                         go.normalsMode = static_cast<GameObject::NormalsMode>(mode);
                     }
-                    bool localToggleEditable = (go.normalsMode == GameObject::NM_UseGlobal);
-
-                    if (!localToggleEditable) ImGui::BeginDisabled();
-                    if (ImGui::Checkbox("Mostrar normales (mesh)", &go.showMeshNormals))
+                    bool forceOnNormals = (go.normalsMode == GameObject::NM_ForceOn);
+                    if (ImGui::Checkbox("Mostrar normales (mesh)", &forceOnNormals))
                     {
-                        Console::LogInfo("Mostrar normales (local) de %s: %s", go.name.c_str(), go.showMeshNormals ? "ON" : "OFF");
+                        go.normalsMode = forceOnNormals ? GameObject::NM_ForceOn : GameObject::NM_UseGlobal;
+                        Console::LogInfo("Mostrar normales (local) de %s: %s", go.name.c_str(), normalsModes[go.normalsMode]);
                     }
-                    if (!localToggleEditable) ImGui::EndDisabled();
 
                     ImGui::TextDisabled("Global Normals: %s", showNormals ? "ON" : "OFF");
 
@@ -1483,7 +1485,20 @@ int main(int argc, char* argv[])
             }
 
             go.Draw(uModelLoc);
-            drawnCount++; 
+            drawnCount++;
+
+            bool drawNormalsForThis = (go.normalsMode == GameObject::NM_ForceOn) ||
+                (go.normalsMode == GameObject::NM_UseGlobal && showNormals);
+            if (drawNormalsForThis)
+            {
+                glUseProgram(normalShaderProgram);
+                glm::mat4 model = go.transform.GetMatrix();
+                glUniformMatrix4fv(normalUModelLoc, 1, GL_FALSE, glm::value_ptr(model));
+                glUniformMatrix4fv(normalUViewLoc, 1, GL_FALSE, glm::value_ptr(view));
+                glUniformMatrix4fv(normalUProjLoc, 1, GL_FALSE, glm::value_ptr(projection));
+                go.meshComp.mesh.DrawNormals();
+                glUseProgram(shaderProgram);
+            }
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
