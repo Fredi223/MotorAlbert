@@ -689,114 +689,11 @@ int main(int argc, char* argv[])
 
     glBindVertexArray(0);
     // ========================================================
-    // CARGAR MODELO FBX -> convertir a GameObjects
+    // ESCENA: sin carga automatica al arrancar.
+    // Los modelos se cargan exclusivamente via drag & drop
+    // (ver SDL_EVENT_DROP_FILE mas abajo).
     // ========================================================
-    std::vector<Mesh> meshes = LoadModel("C:/Users/yovyy/OneDrive/Escritorio/MotorGrafico/vcpkg/MotorProjecto/assets/Street/Street environment_V01.FBX");
-    Console::LogInfo("LoadModel returned %u meshes", (unsigned)meshes.size());
     std::vector<GameObject> gameObjects;
-    gameObjects.reserve(meshes.size());
-    for (size_t i = 0; i < meshes.size(); ++i) {
-        GameObject go;
-        go.name = "BakerHouse_" + std::to_string(i);
-        go.meshComp.mesh = std::move(meshes[i]);
-
-        {
-            glm::vec3 minB, maxB;
-            if (ComputeAABBFromMesh(go.meshComp.mesh, minB, maxB))
-            {
-                go.aabbMin = minB;
-                go.aabbMax = maxB;
-            }
-            else
-            {
-                go.aabbMin = glm::vec3(0.0f);
-                go.aabbMax = glm::vec3(0.0f);
-            }
-        }
-        go.transform.position = glm::vec3(0.0f, 0.0f, 0.0f); 
-        go.transform.rotation = glm::vec3(0.0f);
-        go.transform.scale = glm::vec3(1.0f);
-
-        // --- Textura / path ---
-        if (go.meshComp.mesh.textureID != 0)
-        {
-            go.texComp.textureID = go.meshComp.mesh.textureID;
-            go.texComp.path = go.meshComp.mesh.texturePath; 
-        }
-        else if (!go.meshComp.mesh.texturePath.empty())
-        {
-            int w, h, channels;
-            unsigned char* img = stbi_load(go.meshComp.mesh.texturePath.c_str(), &w, &h, &channels, 0);
-            if (img)
-            {
-                GLuint tex;
-                glGenTextures(1, &tex);
-                glBindTexture(GL_TEXTURE_2D, tex);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-                glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-                GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
-                glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, img);
-                glGenerateMipmap(GL_TEXTURE_2D);
-                stbi_image_free(img);
-
-                go.texComp.textureID = tex;
-                go.texComp.path = go.meshComp.mesh.texturePath;
-                go.meshComp.mesh.textureID = tex;
-            }
-            else
-            {
-                go.texComp.textureID = checkerTexture;
-                go.texComp.path.clear();
-                Console::LogInfo("No se pudo cargar textura desde mesh.texturePath: %s", go.meshComp.mesh.texturePath.c_str());
-            }
-        }
-        else
-        {
-            go.texComp.textureID = checkerTexture;
-            go.texComp.path.clear();
-        }
-
-        gameObjects.push_back(std::move(go));
-    }
-
-    GLuint streetTexture = 0;
-
-    int w, h, ch;
-    unsigned char* img = stbi_load(
-        "C:/Users/yovyy/OneDrive/Escritorio/MotorGrafico/vcpkg/MotorProjecto/assets/Street/Building_V01_C.png",
-        &w, &h, &ch, 0
-    );
-
-    if (!img)
-    {
-        Console::LogError("No se pudo cargar la textura Street");
-    }
-    else
-    {
-        glGenTextures(1, &streetTexture);
-        glBindTexture(GL_TEXTURE_2D, streetTexture);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        GLenum format = (ch == 4) ? GL_RGBA : GL_RGB;
-        glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, img);
-        glGenerateMipmap(GL_TEXTURE_2D);
-
-        stbi_image_free(img);
-    }
-
-    for (auto& go : gameObjects)
-    {
-        go.texComp.textureID = streetTexture;
-        go.texComp.path = "Building_V01_C.png";
-    }
-
 
     // CREAR OCTREE DE LA ESCENA
     glm::vec3 sceneMin, sceneMax;
