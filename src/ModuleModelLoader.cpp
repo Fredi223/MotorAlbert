@@ -59,7 +59,7 @@ void Mesh::SetupMesh()
     // Formato: pos(3) normal(3) tex(2) color(3) = 11 * sizeof(float)
     GLsizei stride = 11 * sizeof(float);
 
-    // posición
+    // posiciï¿½n
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)(0));
     glEnableVertexAttribArray(0);
 
@@ -97,17 +97,18 @@ void Mesh::DrawNormals() const
 
     glBindVertexArray(VAO);
 
-    glBegin(GL_LINES);
+    // TODO: reescribir con VAO/VBO + shader, immediate mode no soportado en Core Profile
+    // glBegin(GL_LINES);
     for (size_t i = 0; i < vertices.size(); i += 11)
     {
         glm::vec3 pos(vertices[i + 0], vertices[i + 1], vertices[i + 2]);
         glm::vec3 norm(vertices[i + 3], vertices[i + 4], vertices[i + 5]);
-        glm::vec3 end = pos + norm * 0.1f; 
+        glm::vec3 end = pos + norm * 0.1f;
 
-        glVertex3fv(glm::value_ptr(pos));
-        glVertex3fv(glm::value_ptr(end));
+        // glVertex3fv(glm::value_ptr(pos));
+        // glVertex3fv(glm::value_ptr(end));
     }
-    glEnd();
+    // glEnd();
         
     glBindVertexArray(0);
 }
@@ -133,7 +134,7 @@ static void ProcessAIMesh(
 {
     Mesh mesh;
 
-    // Transformación del nodo (CLAVE)
+    // Transformaciï¿½n del nodo (CLAVE)
     glm::mat4 nodeTransform = AiToGlm(node->mTransformation);
 
     // --- Material / textura ---
@@ -147,12 +148,12 @@ static void ProcessAIMesh(
         }
     }
 
-    // --- Vértices ---
+    // --- Vï¿½rtices ---
     mesh.vertices.reserve(ai_mesh->mNumVertices * 11);
 
     for (unsigned int v = 0; v < ai_mesh->mNumVertices; ++v)
     {
-        // POSICIÓN (con transformación aplicada)
+        // POSICIï¿½N (con transformaciï¿½n aplicada)
         glm::vec4 p = nodeTransform * glm::vec4(
             ai_mesh->mVertices[v].x,
             ai_mesh->mVertices[v].y,
@@ -191,7 +192,7 @@ static void ProcessAIMesh(
         mesh.vertices.insert(mesh.vertices.end(), { 1.f, 1.f, 1.f });
     }
 
-    // --- Índices ---
+    // --- ï¿½ndices ---
     for (unsigned int f = 0; f < ai_mesh->mNumFaces; ++f)
     {
         const aiFace& face = ai_mesh->mFaces[f];

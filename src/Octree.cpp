@@ -131,12 +131,13 @@ void Octree::DebugDrawNode(const OctreeNode* node) const
 {
     if (!node) return;
 
-    glBegin(GL_LINE_LOOP);
-    glVertex3f(node->min.x, node->min.y, node->min.z);
-    glVertex3f(node->max.x, node->min.y, node->min.z);
-    glVertex3f(node->max.x, node->max.y, node->min.z);
-    glVertex3f(node->min.x, node->max.y, node->min.z);
-    glEnd();
+    // TODO: reescribir con VAO/VBO + shader, immediate mode no soportado en Core Profile
+    // glBegin(GL_LINE_LOOP);
+    // glVertex3f(node->min.x, node->min.y, node->min.z);
+    // glVertex3f(node->max.x, node->min.y, node->min.z);
+    // glVertex3f(node->max.x, node->max.y, node->min.z);
+    // glVertex3f(node->min.x, node->max.y, node->min.z);
+    // glEnd();
 
     if (!node->IsLeaf())
     {
