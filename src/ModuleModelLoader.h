@@ -20,4 +20,7 @@ struct Mesh {
     void DrawNormals() const;
     void Destroy();     
 };
-std::vector<Mesh> LoadModel(const std::string& path);
+// outUnitScale (opcional): factor de conversion a metros deducido del
+// UnitScaleFactor de los metadatos de Assimp (fallback 0.01 si el FBX
+// no trae esa metadata, asumiendo centimetros).
+std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale = nullptr);

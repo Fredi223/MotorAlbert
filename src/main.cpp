@@ -934,7 +934,8 @@ int main(int argc, char* argv[])
                     }
                     if (ends_with(lower, ".fbx"))
                     {
-                        std::vector<Mesh> newMeshes = LoadModel(filePath);
+                        float fbxUnitScale = 1.0f;
+                        std::vector<Mesh> newMeshes = LoadModel(filePath, &fbxUnitScale);
 
                         size_t currentSize = gameObjects.size();
                         for (size_t i = 0; i < newMeshes.size(); ++i)
@@ -964,8 +965,8 @@ int main(int argc, char* argv[])
 
                             go.transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
                             go.transform.rotation = glm::vec3(0.0f);
-                            go.transform.scale = glm::vec3(1.0f);
-                
+                            go.transform.scale = glm::vec3(fbxUnitScale);
+
                             if (go.meshComp.mesh.textureID != 0)
                             {
                                 go.texComp.textureID = go.meshComp.mesh.textureID;

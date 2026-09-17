@@ -205,7 +205,7 @@ static void ProcessAIMesh(
 }
 
 
-std::vector<Mesh> LoadModel(const std::string& path)
+std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
 {
     std::vector<Mesh> outMeshes;
     Assimp::Importer importer;
@@ -228,6 +228,18 @@ std::vector<Mesh> LoadModel(const std::string& path)
     if (!scene) {
         Console::LogError("Assimp error: %s", importer.GetErrorString());
         return outMeshes;
+    }
+
+    if (outUnitScale)
+    {
+        // UnitScaleFactor (FBX): centimetros por unidad nativa del archivo.
+        // Si no hay metadata, se asume 1.0 (cm), el caso mas comun.
+        double unitScaleFactor = 1.0;
+        if (scene->mMetaData)
+        {
+            scene->mMetaData->Get("UnitScaleFactor", unitScaleFactor);
+        }
+        *outUnitScale = static_cast<float>(unitScaleFactor) / 100.0f;
     }
 
     if (!scene->HasMeshes()) {
