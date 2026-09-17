@@ -6,20 +6,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # --- Dependencias ---
-# Se resuelven via vcpkg (manifest mode), pendiente de configurar en el
-# siguiente paso: vcpkg.json + CMAKE_TOOLCHAIN_FILE apuntando a
-# vcpkg/scripts/buildsystems/vcpkg.cmake. Hasta entonces estos
-# find_package fallan porque no hay ningun paquete instalado todavia.
+# Resueltas via vcpkg en modo manifest (vcpkg.json), a traves del
+# toolchain file configurado en CMakePresets.json.
 find_package(SDL3 CONFIG REQUIRED)
 find_package(OpenGL REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-
-# GLAD no esta cubierto aqui: no es un find_package normal (requiere
-# generar el loader para el spec de OpenGL 4.6 Core que usa el motor)
-# y ahora mismo ni siquiera esta vendorizado en el repo. Pendiente de
-# decidir como se resuelve antes de poder compilar.
 
 add_executable(MotorAlbert
     src/main.cpp
@@ -32,9 +25,15 @@ add_executable(MotorAlbert
     src/GameObject.h
     src/Transform.h
     src/stb_image.h
+    src/vendor/glad/src/glad.c
+    src/vendor/glad/include/glad/glad.h
+    src/vendor/glad/include/KHR/khrplatform.h
 )
 
-target_include_directories(MotorAlbert PRIVATE src)
+target_include_directories(MotorAlbert PRIVATE
+    src
+    src/vendor/glad/include
+)
 
 target_link_libraries(MotorAlbert PRIVATE
     SDL3::SDL3

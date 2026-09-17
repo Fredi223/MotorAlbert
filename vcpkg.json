@@ -1,0 +1,17 @@
+{
+  "name": "motor-albert",
+  "version": "0.1.0",
+  "dependencies": [
+    "sdl3",
+    "glm",
+    "assimp",
+    {
+      "name": "imgui",
+      "features": [
+        "docking-experimental",
+        "opengl3-binding",
+        "sdl3-binding"
+      ]
+    }
+  ]
+}
