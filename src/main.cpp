@@ -17,12 +17,12 @@
 #include <stack>
 
 #include <cfloat>
-#include "src/ModuleModelLoader.h"
-#include "src/GameObject.h"
+#include "ModuleModelLoader.h"
+#include "GameObject.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "src/Octree.h"
+#include "Octree.h"
 
 #include "Logger.h"
 
