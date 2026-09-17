@@ -1,0 +1,44 @@
+# ==== Build systems (CMake) ====
+build/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+CMakeUserPresets.json
+
+# ==== vcpkg ====
+vcpkg_installed/
+vcpkg/buildtrees/
+vcpkg/downloads/
+vcpkg/packages/
+vcpkg/installed/
+
+# ==== Visual Studio ====
+.vs/
+*.vcxproj.user
+*.suo
+*.sdf
+*.opensdf
+
+# ==== Binarios / artefactos de compilación ====
+*.exe
+*.dll
+*.obj
+*.o
+*.lib
+*.pdb
+*.ilk
+*.exp
+*.idb
+
+# ==== Estado de ImGui (layout de ventanas, no es código) ====
+imgui.ini
+
+# ==== Assets pesados de terceros (pack "Street") ====
+# 36 MB de FBX/DAE/MAX/MTL/TGA duplicados y en múltiples formatos
+# redundantes del mismo modelo. No aporta como fuente versionable
+# en un repo sin Git LFS. Se mantiene BakerHouse (~1.3 MB) como
+# asset de prueba ligero para el drag & drop.
+MotorAlbert.V2/MotorAlbert/assets/Street/
