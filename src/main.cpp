@@ -1127,6 +1127,14 @@ int main(int argc, char* argv[])
 
             float dx = 0.f, dy = 0.f;
             SDL_GetRelativeMouseState(&dx, &dy);
+            // SDL acumula el movimiento desde la última llamada, y aquí solo se
+            // llama con el click derecho mantenido: el primer delta trae todo el
+            // recorrido del cursor hasta el viewport. Se descarta.
+            if (firstMouse)
+            {
+                dx = dy = 0.f;
+                firstMouse = false;
+            }
             float xoffset = dx * mouseSensitivity;
             float yoffset = -dy * mouseSensitivity;
 
