@@ -196,6 +196,58 @@ Uint32 lastNormalsToggleMs = 0;
 const Uint32 NORMALS_TOGGLE_DEBOUNCE = 150;
 const float NORMAL_LENGTH_PERCENT = 0.03f; // % de la diagonal del AABB local de la malla
 
+// --- Cámara orbital (Alt + click izquierdo) ---
+const float CAMERA_FOV_DEG = 60.0f;             // FOV vertical; lo usan la proyección y el encuadre (F)
+const float ORBIT_ZOOM_STEP = 0.1f;             // fracción de distance por muesca de rueda
+const float ORBIT_MIN_RADIUS_FACTOR = 0.75f;    // distancia mínima = factor * radio del objeto...
+const float ORBIT_MIN_DISTANCE_FLOOR = 0.25f;   // ...con este suelo si no hay objeto
+const float ORBIT_MAX_DISTANCE = 90.0f;         // el far plane está en 100
+const float FRAME_MARGIN = 1.2f;                // holgura alrededor del objeto al encuadrar
+glm::vec3 orbitTarget = glm::vec3(0.0f);
+float orbitDistance = 5.0f;                     // distancia cámara-target
+float orbitRadius = 0.0f;                       // semidiagonal del AABB del target (0 = origen)
+
+// Recalcula cameraFront a partir de yaw/pitch (compartido por libre y orbital).
+static void UpdateCameraFront()
+{
+    glm::vec3 front;
+    front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    front.y = sin(glm::radians(pitch));
+    front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    cameraFront = glm::normalize(front);
+}
+
+// Inversa de UpdateCameraFront: orienta yaw/pitch para mirar de "from" hacia "to".
+static void AimCameraAt(const glm::vec3& from, const glm::vec3& to)
+{
+    glm::vec3 d = glm::normalize(to - from);
+    yaw = glm::degrees(atan2(d.z, d.x));
+    pitch = glm::clamp(glm::degrees(asin(d.y)), -89.0f, 89.0f);
+    UpdateCameraFront();
+}
+
+// Target orbital = centro del AABB de mundo del objeto seleccionado; sin selección, el origen.
+static void GetOrbitTarget(std::vector<GameObject>& objs, int sel, glm::vec3& outCenter, float& outRadius)
+{
+    if (sel >= 0 && sel < (int)objs.size())
+    {
+        GameObject& go = objs[sel];
+        go.UpdateWorldAABB(); // el Inspector mueve el transform sin refrescar el AABB cacheado
+        outCenter = (go.worldAabbMin + go.worldAabbMax) * 0.5f;
+        outRadius = 0.5f * glm::length(go.worldAabbMax - go.worldAabbMin);
+    }
+    else
+    {
+        outCenter = glm::vec3(0.0f);
+        outRadius = 0.0f;
+    }
+}
+
+static float OrbitMinDistance(float radius)
+{
+    return std::max(ORBIT_MIN_DISTANCE_FLOOR, radius * ORBIT_MIN_RADIUS_FACTOR);
+}
+
 // ============================================================
 // INICIALIZACIÓN DE SDL + OpenGL
 // ============================================================
@@ -562,7 +614,7 @@ int main(int argc, char* argv[])
 
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
-    glm::mat4 projection = glm::perspective(glm::radians(60.0f),
+    glm::mat4 projection = glm::perspective(glm::radians(CAMERA_FOV_DEG),
         1280.0f / 720.0f,
         0.1f, 100.0f);
 
@@ -745,6 +797,70 @@ int main(int argc, char* argv[])
 
     int prevMouseX = 0, prevMouseY = 0;
     bool freeLookActive = false;   // el click derecho empezó dentro del viewport
+    bool orbitActive = false;      // Alt + click izquierdo empezó dentro del viewport
+    float wheelDelta = 0.0f;       // muescas de rueda acumuladas en el frame (dentro del viewport)
+
+    // Captura del ratón compartida por cámara libre y orbital (son excluyentes).
+    auto BeginMouseCapture = [&]() {
+        float mx = 0.f, my = 0.f;
+        SDL_GetMouseState(&mx, &my);
+        prevMouseX = (int)mx;
+        prevMouseY = (int)my;
+
+        SDL_SetWindowRelativeMouseMode(window, true);
+        SDL_HideCursor();
+        firstMouse = true;
+        };
+
+    auto EndMouseCapture = [&]() {
+        SDL_SetWindowRelativeMouseMode(window, false);
+        SDL_ShowCursor();
+        SDL_WarpMouseInWindow(window, (float)prevMouseX, (float)prevMouseY);
+        };
+
+    // Aplica el delta de ratón a yaw/pitch (mismos ángulos en ambos modos).
+    auto ApplyMouseLook = [&]() {
+        float dx = 0.f, dy = 0.f;
+        SDL_GetRelativeMouseState(&dx, &dy);
+        // SDL acumula el movimiento desde la última llamada, y aquí solo se
+        // llama con un botón mantenido: el primer delta trae todo el recorrido
+        // del cursor hasta el viewport. Se descarta.
+        if (firstMouse)
+        {
+            dx = dy = 0.f;
+            firstMouse = false;
+        }
+        yaw += dx * mouseSensitivity;
+        pitch += -dy * mouseSensitivity;
+        if (pitch > 89.0f) pitch = 89.0f;
+        if (pitch < -89.0f) pitch = -89.0f;
+        UpdateCameraFront();
+        };
+
+    // F: encuadra el objeto seleccionado manteniendo la dirección de mirada actual.
+    auto FrameSelectedObject = [&]() {
+        if (selectedObject < 0 || selectedObject >= (int)gameObjects.size())
+        {
+            Console::LogInfo("F: no hay ningun objeto seleccionado que encuadrar");
+            return;
+        }
+        GetOrbitTarget(gameObjects, selectedObject, orbitTarget, orbitRadius);
+
+        // La esfera que envuelve el AABB debe caber en el FOV mas estrecho
+        // (vertical u horizontal, segun el aspecto del viewport).
+        float aspect = viewportHeightF > 0.0f ? viewportWidthF / viewportHeightF : 1.0f;
+        float halfFovY = glm::radians(CAMERA_FOV_DEG) * 0.5f;
+        float halfFovX = atan(tan(halfFovY) * aspect);
+        float halfFov = std::min(halfFovY, halfFovX);
+
+        float radius = std::max(orbitRadius, 0.01f);
+        orbitDistance = radius / sin(halfFov) * FRAME_MARGIN;
+        orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(orbitRadius), ORBIT_MAX_DISTANCE);
+        cameraPos = orbitTarget - cameraFront * orbitDistance;
+
+        Console::LogInfo("Encuadrado %s: target=(%.2f, %.2f, %.2f) distancia=%.2f",
+            gameObjects[selectedObject].name.c_str(), orbitTarget.x, orbitTarget.y, orbitTarget.z, orbitDistance);
+        };
 
     std::stack<std::vector<GameObject>> undoStack;
     Uint32 lastUndoTime = 0;
@@ -875,8 +991,18 @@ int main(int argc, char* argv[])
                         lastNormalsToggleMs = now;
                     }
                 }
+                else if (sc == SDL_SCANCODE_F && !io.WantTextInput)
+                {
+                    FrameSelectedObject();
+                }
             }
             break;
+
+            case SDL_EVENT_MOUSE_WHEEL:
+                // Solo con el cursor sobre el viewport (dato del frame anterior, como el resto).
+                if (mouseInsideViewport)
+                    wheelDelta += e.wheel.y;
+                break;
 
             case SDL_EVENT_DROP_FILE:
             {
@@ -1090,34 +1216,52 @@ int main(int argc, char* argv[])
         }
 
         // ========================================================
-        //  CONTROL DE CÁMARA CON CLICK DERECHO
+        //  CONTROL DE CÁMARA: LIBRE (click derecho) Y ORBITAL (Alt + click izquierdo)
         // ========================================================
         bool rightClickHeld = ImGui::IsMouseDown(ImGuiMouseButton_Right);
         bool rightClickPressed = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
         bool rightClickReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Right);
+        bool leftClickHeld = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        bool leftClickPressed = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+        bool leftClickReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+        bool altHeld = io.KeyAlt; // el picking (más abajo) lo consulta: Alt + click izquierdo nunca selecciona
 
+        // Entrada en cada modo. Ambos capturan el ratón, así que son excluyentes.
         // mouseInsideViewport lo calcula el panel "Viewport" más abajo en el
         // frame, así que aquí vale el del frame anterior (mismo dato que usa el picking).
-        if (rightClickPressed && mouseInsideViewport)
+        if (mouseInsideViewport && !freeLookActive && !orbitActive)
         {
-            float mx = 0.f, my = 0.f;
-            SDL_GetMouseState(&mx, &my);
-            prevMouseX = mx;
-            prevMouseY = my;
+            if (rightClickPressed)
+            {
+                BeginMouseCapture();
+                freeLookActive = true;
+            }
+            else if (leftClickPressed && altHeld)
+            {
+                BeginMouseCapture();
+                orbitActive = true;
 
-            SDL_SetWindowRelativeMouseMode(window, true);
-            SDL_HideCursor();
-            firstMouse = true;
-            freeLookActive = true;
+                // Target: objeto seleccionado (o el origen). distance: la actual cámara-target.
+                // Se orienta la cámara hacia el target SIN moverla, así cameraPos ya cumple
+                // cameraPos = target - front * distance y no hay salto de posición.
+                GetOrbitTarget(gameObjects, selectedObject, orbitTarget, orbitRadius);
+                orbitDistance = glm::length(cameraPos - orbitTarget);
+                if (orbitDistance > 1e-4f) AimCameraAt(cameraPos, orbitTarget);
+                orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(orbitRadius), ORBIT_MAX_DISTANCE);
+                cameraPos = orbitTarget - cameraFront * orbitDistance;
+            }
         }
 
         if (rightClickReleased && freeLookActive)
         {
-            SDL_SetWindowRelativeMouseMode(window, false);
-            SDL_ShowCursor();
-
-            SDL_WarpMouseInWindow(window, prevMouseX, prevMouseY);
+            EndMouseCapture();
             freeLookActive = false;
+        }
+
+        if (leftClickReleased && orbitActive)
+        {
+            EndMouseCapture();
+            orbitActive = false;
         }
 
         if (freeLookActive && rightClickHeld)
@@ -1125,29 +1269,7 @@ int main(int argc, char* argv[])
             io.WantCaptureMouse = false;
             io.WantCaptureKeyboard = false;
 
-            float dx = 0.f, dy = 0.f;
-            SDL_GetRelativeMouseState(&dx, &dy);
-            // SDL acumula el movimiento desde la última llamada, y aquí solo se
-            // llama con el click derecho mantenido: el primer delta trae todo el
-            // recorrido del cursor hasta el viewport. Se descarta.
-            if (firstMouse)
-            {
-                dx = dy = 0.f;
-                firstMouse = false;
-            }
-            float xoffset = dx * mouseSensitivity;
-            float yoffset = -dy * mouseSensitivity;
-
-            yaw += xoffset;
-            pitch += yoffset;
-            if (pitch > 89.0f) pitch = 89.0f;
-            if (pitch < -89.0f) pitch = -89.0f;
-
-            glm::vec3 front;
-            front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-            front.y = sin(glm::radians(pitch));
-            front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-            cameraFront = glm::normalize(front);
+            ApplyMouseLook();
 
             // Duración del último frame completo (g_frameTimes está en ms).
             float deltaTime = g_frameTimes.empty() ? 0.0f : g_frameTimes.back() / 1000.0f;
@@ -1164,9 +1286,42 @@ int main(int argc, char* argv[])
             if (keys[SDL_SCANCODE_D]) cameraPos += right * speed;
             if (keys[SDL_SCANCODE_E]) cameraPos += cameraUp * speed;
             if (keys[SDL_SCANCODE_Q]) cameraPos -= cameraUp * speed;
-
-            view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         }
+
+        if (orbitActive && leftClickHeld)
+        {
+            ApplyMouseLook();
+            cameraPos = orbitTarget - cameraFront * orbitDistance;
+        }
+
+        // Rueda: acerca/aleja la cámara del target. En modo orbital cambia distance y recoloca
+        // la cámara sobre la esfera; fuera de él es un dolly a lo largo de cameraFront (sin
+        // girar la vista), con la distancia real al target como referencia.
+        if (wheelDelta != 0.0f)
+        {
+            if (!orbitActive)
+            {
+                GetOrbitTarget(gameObjects, selectedObject, orbitTarget, orbitRadius);
+                orbitDistance = glm::length(cameraPos - orbitTarget);
+            }
+            float oldDistance = orbitDistance;
+            float newDistance = oldDistance * std::pow(1.0f - ORBIT_ZOOM_STEP, wheelDelta);
+            // Sin atravesar el objeto ni salir del far plane, pero sin atrapar a una
+            // cámara que ya está fuera de ese rango: solo se limita el sentido que empeora.
+            if (newDistance < oldDistance)
+                newDistance = std::max(newDistance, std::min(oldDistance, OrbitMinDistance(orbitRadius)));
+            else
+                newDistance = std::min(newDistance, std::max(oldDistance, ORBIT_MAX_DISTANCE));
+            orbitDistance = newDistance;
+
+            if (orbitActive) cameraPos = orbitTarget - cameraFront * orbitDistance;
+            else cameraPos += cameraFront * (oldDistance - newDistance);
+        }
+        wheelDelta = 0.0f;
+
+        // Único punto donde se recalcula view: refleja cameraPos/cameraFront tras cualquier
+        // modo, la rueda o F. El picking usa cameraPos como origen del rayo, y debe coincidir.
+        view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
         glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
 
@@ -1179,7 +1334,7 @@ int main(int argc, char* argv[])
         //  Actualizar proyección según el tamaño del viewport
         // ============================================================
         projection = glm::perspective(
-            glm::radians(60.0f),
+            glm::radians(CAMERA_FOV_DEG),
             viewportWidthF / viewportHeightF,
             0.1f, 100.0f
         );
@@ -1710,7 +1865,7 @@ int main(int argc, char* argv[])
         // ========================================================
         // CONTROL DE SELECCIÓN DE OBJETOS (RAYCAST) - VERSIÓN REVERT
         // ========================================================
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && mouseInsideViewport && !ImGui::IsAnyItemHovered())
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !altHeld && mouseInsideViewport && !ImGui::IsAnyItemHovered())
         {
             // Coordenadas relativas al viewport (origen arriba-izq)
             int mouseX = (int)relMouseX;
