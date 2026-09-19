@@ -1921,10 +1921,6 @@ int main(int argc, char* argv[])
         // ========================================================
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !altHeld && mouseInsideViewport && !ImGui::IsAnyItemHovered())
         {
-            const float minPixelThreshold = 24.0f;   
-            const float safetyMultiplier = 1.05f;   
-            const float selectionPixelThreshold = 60.0f; 
-            const float maxPixelRadius = std::sqrt(viewportWidthF * viewportWidthF + viewportHeightF * viewportHeightF);
             const float PICK_TOLERANCE_PIXELS = 3.0f;   // margen de click alrededor del AABB, en pixeles de pantalla
             const float pickPixelToWorld = 2.0f * std::tan(glm::radians(CAMERA_FOV_DEG) * 0.5f) / viewportHeightF; // mundo por pixel y por unidad de profundidad
 
@@ -1975,87 +1971,9 @@ int main(int argc, char* argv[])
                     continue;
 
 
-                glm::mat4 modelGO = go.transform.GetMatrix();
-
                 glm::vec3 pointWorld = rayOrigin + rayDir * tHit;
 
                 float worldDist = glm::length(pointWorld - rayOrigin);
-
-                glm::vec3 corners[8] = {
-                    {go.aabbMin.x, go.aabbMin.y, go.aabbMin.z},
-                    {go.aabbMax.x, go.aabbMin.y, go.aabbMin.z},
-                    {go.aabbMin.x, go.aabbMax.y, go.aabbMin.z},
-                    {go.aabbMax.x, go.aabbMax.y, go.aabbMin.z},
-                    {go.aabbMin.x, go.aabbMin.y, go.aabbMax.z},
-                    {go.aabbMax.x, go.aabbMin.y, go.aabbMax.z},
-                    {go.aabbMin.x, go.aabbMax.y, go.aabbMax.z},
-                    {go.aabbMax.x, go.aabbMax.y, go.aabbMax.z}
-                };
-
-                float minX = std::numeric_limits<float>::infinity();
-                float maxX = -std::numeric_limits<float>::infinity();
-                float minY = std::numeric_limits<float>::infinity();
-                float maxY = -std::numeric_limits<float>::infinity();
-                bool anyVisible = false;
-
-                for (int c = 0; c < 8; ++c)
-                {
-                    
-                    glm::vec3 worldCorner =
-                        glm::vec3(modelGO * glm::vec4(corners[c], 1.0f));
-
-                    glm::vec4 clip = projection * view * glm::vec4(worldCorner, 1.0f);
-                    if (clip.w == 0.0f) continue;
-
-                    glm::vec3 ndc = glm::vec3(clip) / clip.w;
-                    if (ndc.z < -1.0f || ndc.z > 1.0f) continue;
-
-                    float sx = (ndc.x * 0.5f + 0.5f) * viewportWidthF;
-                    float sy = (0.5f - ndc.y * 0.5f) * viewportHeightF;
-
-                    minX = std::min(minX, sx);
-                    maxX = std::max(maxX, sx);
-                    minY = std::min(minY, sy);
-                    maxY = std::max(maxY, sy);
-
-                    anyVisible = true;
-                }
-
-
-                float objectScreenRadius = minPixelThreshold;
-                if (anyVisible)
-                {
-                    float widthPixels = maxX - minX;
-                    float heightPixels = maxY - minY;
-                    float boundingRadius = std::sqrt((widthPixels * widthPixels + heightPixels * heightPixels)) * 0.5f;
-                    objectScreenRadius = std::clamp(boundingRadius * safetyMultiplier, minPixelThreshold, maxPixelRadius);
-                }
-                else
-                {
-                    glm::vec4 clip = projection * view * glm::vec4(pointWorld, 1.0f);
-                    if (clip.w != 0.0f)
-                    {
-                        glm::vec3 ndc = glm::vec3(clip) / clip.w;
-                        if (ndc.z >= -1.0f && ndc.z <= 1.0f)
-                        {
-                            objectScreenRadius = std::max(minPixelThreshold, 12.0f);
-                        }
-                    }
-                }
-                glm::vec4 clipPoint = projection * view * glm::vec4(pointWorld, 1.0f);
-                bool passesScreenThreshold = true;
-                if (clipPoint.w != 0.0f)
-                {
-                    glm::vec3 ndcP = glm::vec3(clipPoint) / clipPoint.w;
-                    float hitScreenX = (ndcP.x * 0.5f + 0.5f) * viewportWidthF;
-                    float hitScreenY = (0.5f - ndcP.y * 0.5f) * viewportHeightF;
-
-                    float dx = hitScreenX - relMouseX;
-                    float dy = hitScreenY - relMouseY;
-                    float pixelDist = std::sqrt(dx * dx + dy * dy);
-
-                    passesScreenThreshold = (pixelDist <= objectScreenRadius);
-                }
 
                 if (worldDist > 0.0f && worldDist < closestDistance)
                 {
