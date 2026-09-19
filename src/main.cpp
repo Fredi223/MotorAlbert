@@ -511,16 +511,20 @@ void ComputeSceneAABB(const std::vector<GameObject>& objects,
 // ============================================================
 // CONVERTIR POSICIÓN DE RATÓN A RAYO EN ESPACIO MUNDIAL
 // ============================================================
-glm::vec3 ScreenToWorldRay_UnProject(float mouseX, float mouseY, float viewportXf, float viewportYf,
+// Direccion del rayo que sale de la camara por el pixel (mouseX, mouseY) del viewport.
+// mouseX/mouseY son PIXELES RELATIVOS a la esquina superior izquierda del viewport (Y hacia abajo,
+// como los da ImGui); viewportW/H es su tamano en pixeles. glm::unProject espera coordenadas de
+// ventana con el origen ABAJO a la izquierda y las compara con el viewport que se le pasa, asi que:
+// el viewport es (0, 0, W, H) (el mouse ya es relativo; sumarle la posicion absoluta del viewport en
+// pantalla desplazaba el rayo) y la Y se invierte UNA sola vez (H - mouseY).
+glm::vec3 ScreenToWorldRay_UnProject(float mouseX, float mouseY,
     float viewportW, float viewportH,
     const glm::mat4& projection, const glm::mat4& view)
 {
-    float x = mouseX;
-    float y = mouseY;
-  
-    glm::vec4 viewport = glm::vec4(viewportXf, viewportYf, viewportW, viewportH);
-    glm::vec3 winNear = glm::unProject(glm::vec3(x, viewportH - y, 0.0f), view, projection, viewport);
-    glm::vec3 winFar = glm::unProject(glm::vec3(x, viewportH - y, 1.0f), view, projection, viewport);
+    const glm::vec4 viewport(0.0f, 0.0f, viewportW, viewportH);
+    const float winY = viewportH - mouseY;
+    glm::vec3 winNear = glm::unProject(glm::vec3(mouseX, winY, 0.0f), view, projection, viewport);
+    glm::vec3 winFar = glm::unProject(glm::vec3(mouseX, winY, 1.0f), view, projection, viewport);
     return glm::normalize(winFar - winNear);
 }
 
@@ -796,8 +800,6 @@ int main(int argc, char* argv[])
     bool mouseInsideViewport = false;
     float relMouseX = 0.0f;
     float relMouseY = 0.0f;
-    float viewportX = 0.0f;
-    float viewportY = 0.0f;
     float viewportWidthF = 1280.0f;
     float viewportHeightF = 720.0f;
 
@@ -1899,9 +1901,6 @@ int main(int argc, char* argv[])
             (relMouseX >= 0 && relMouseX < size.x &&
                 relMouseY >= 0 && relMouseY < size.y);
 
-        viewportX = cursorPos.x;
-        viewportY = cursorPos.y;
-
         if ((int)size.x != viewportWidth || (int)size.y != viewportHeight)
         {
             viewportWidth = (int)size.x;
@@ -1922,20 +1921,16 @@ int main(int argc, char* argv[])
         // ========================================================
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !altHeld && mouseInsideViewport && !ImGui::IsAnyItemHovered())
         {
-            // Coordenadas relativas al viewport (origen arriba-izq)
-            int mouseX = (int)relMouseX;
-            int mouseY = (int)relMouseY;
-
             const float minPixelThreshold = 24.0f;   
             const float safetyMultiplier = 1.05f;   
             const float selectionPixelThreshold = 60.0f; 
             const float maxPixelRadius = std::sqrt(viewportWidthF * viewportWidthF + viewportHeightF * viewportHeightF);
+            const float PICK_TOLERANCE_PIXELS = 3.0f;   // margen de click alrededor del AABB, en pixeles de pantalla
+            const float pickPixelToWorld = 2.0f * std::tan(glm::radians(CAMERA_FOV_DEG) * 0.5f) / viewportHeightF; // mundo por pixel y por unidad de profundidad
 
-            mouseY = (int)viewportHeightF - mouseY;
-
+            // relMouseX/Y ya son relativos al viewport (origen arriba-izq), tal como los espera la funcion
             glm::vec3 rayDir = ScreenToWorldRay_UnProject(
-                (float)mouseX, (float)mouseY,
-                viewportX, viewportY,
+                relMouseX, relMouseY,
                 viewportWidthF, viewportHeightF,
                 projection, view);
 
@@ -1963,7 +1958,15 @@ int main(int argc, char* argv[])
 
                 float tHit = 0.0f;
 
-                const float pickInflate = 2.0f; 
+                // Tolerancia de click: como maximo PICK_TOLERANCE_PIXELS pixeles alrededor del AABB. Un
+                // pixel a profundidad d equivale a d * 2*tan(fov/2) / altoViewport unidades de mundo, asi el
+                // margen es parecido en pantalla cerca o lejos (uno fijo en mundo no lo es). Se usa una cota
+                // inferior de la profundidad de cualquier punto del AABB (la del centro menos la semidiagonal)
+                // para que en sus caras mas cercanas, donde un pixel mide menos, el margen no se dispare.
+                const glm::vec3 aabbCenter = (go.worldAabbMin + go.worldAabbMax) * 0.5f;
+                const float halfDiag = 0.5f * glm::length(go.worldAabbMax - go.worldAabbMin);
+                const float depth = std::max(glm::dot(aabbCenter - rayOrigin, cameraFront) - halfDiag, 0.1f);
+                const float pickInflate = PICK_TOLERANCE_PIXELS * depth * pickPixelToWorld;
 
                 glm::vec3 pickMin = go.worldAabbMin - glm::vec3(pickInflate);
                 glm::vec3 pickMax = go.worldAabbMax + glm::vec3(pickInflate);
