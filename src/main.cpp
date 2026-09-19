@@ -232,7 +232,7 @@ static void GetOrbitTarget(std::vector<GameObject>& objs, int sel, glm::vec3& ou
     if (sel >= 0 && sel < (int)objs.size())
     {
         GameObject& go = objs[sel];
-        go.UpdateWorldAABB(); // el Inspector mueve el transform sin refrescar el AABB cacheado
+        go.UpdateWorldAABB(); // defensivo: garantiza un AABB fresco aunque otra ruta haya tocado el transform
         outCenter = (go.worldAabbMin + go.worldAabbMax) * 0.5f;
         outRadius = 0.5f * glm::length(go.worldAabbMax - go.worldAabbMin);
     }
@@ -1416,20 +1416,49 @@ int main(int argc, char* argv[])
                 // ---------------- Transform ----------------
                 if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
                 {
+                    // Cualquier cambio del transform deja desactualizado el AABB de mundo cacheado
+                    // (worldAabbMin/Max), que usan el culling y el picking, y la posicion del
+                    // objeto dentro del octree.
+                    bool transformChanged = false;    // hubo un cambio de valor en este frame
+                    bool transformCommitted = false;  // el gesto de edicion (arrastre o tecleo) ha terminado
+
                     if (ImGui::DragFloat3("Position", glm::value_ptr(go.transform.position), 0.1f))
                     {
+                        transformChanged = true;
                     }
+                    transformCommitted |= ImGui::IsItemDeactivatedAfterEdit();
                     if (ImGui::DragFloat3("Rotation", glm::value_ptr(go.transform.rotation), 0.5f))
                     {
+                        transformChanged = true;
                     }
+                    transformCommitted |= ImGui::IsItemDeactivatedAfterEdit();
                     if (ImGui::DragFloat3("Scale", glm::value_ptr(go.transform.scale), 0.05f))
                     {
                         go.transform.scale = glm::max(go.transform.scale, glm::vec3(0.001f));
+                        transformChanged = true;
                     }
+                    transformCommitted |= ImGui::IsItemDeactivatedAfterEdit();
                     if (ImGui::Button("Reset Transform")) {
                         go.transform.position = glm::vec3(0.0f);
                         go.transform.rotation = glm::vec3(0.0f);
                         go.transform.scale = glm::vec3(1.0f);
+                        transformChanged = true;
+                        transformCommitted = true;
+                    }
+
+                    // El AABB del objeto se refresca en cada cambio (8 esquinas, barato), asi el
+                    // culling y el picking de este mismo frame ya usan la posicion real...
+                    if (transformChanged)
+                    {
+                        go.UpdateWorldAABB();
+                    }
+                    // ...pero el octree solo sabe reconstruirse entero (y cada reconstruccion escribe
+                    // en la consola): se reconstruye una vez al terminar el gesto, no en cada frame
+                    // de un arrastre. Mientras se arrastra, la consulta de dibujo (caja de +-1000)
+                    // sigue devolviendo el objeto aunque su hoja del octree sea la antigua.
+                    if (transformCommitted)
+                    {
+                        sceneStructureDirty = true;
                     }
                 }
 
