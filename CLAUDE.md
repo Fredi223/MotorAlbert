@@ -27,13 +27,33 @@ SDL, OpenGL, GLM, Assimp, ImGui (con bindings de SDL3 + OpenGL3).
 
 ## Estado del proyecto
 
-- Repo Git inicializado, un único commit limpio como base (historial anterior de
-  GitHub con subidas manuales fue reemplazado intencionadamente).
-- CMake y vcpkg pendientes de configurar (ver siguiente sección de tareas si existe
-  un archivo de seguimiento aparte, o preguntar al usuario por el estado actual).
-- Los includes usaban prefijo `src/` de forma inconsistente con archivos planos —
-  si se mueve código, verificar que la estructura de carpetas y los includes sean
-  coherentes entre sí.
+- Build system completo y funcional: Git + CMake + vcpkg (modo manifest) + GLAD
+  (OpenGL 4.6 Core), verificado de punta a punta.
+- Estructura de carpetas limpia: `src/` (con GLAD en `src/vendor/glad/`), `assets/`,
+  `docs/`. `MotorAlbert.V2/` (build antiguo) eliminada.
+- Cámara: libre (WASD + QE + Shift sprint, con deltaTime) y orbital (Alt+click, zoom
+  con rueda, F para encuadrar) implementadas y verificadas.
+- Visualizador de normales conectado y calibrado (offset proporcional, color verde),
+  con toggle global y por objeto. Desactivado por defecto.
+- Cascada de bugs de escena resuelta y verificada (con ASan y pruebas de referencia
+  independientes): use-after-free en Delete/Duplicate del Hierarchy, AABB no
+  refrescado al editar Transform desde el Inspector, `ExtractFrustum` con planos mal
+  extraídos (columnas en vez de filas), y rayo de picking con mezcla de coordenadas
+  absolutas/relativas y doble inversión de Y. Picking, culling y AABB son ahora
+  consistentes entre sí.
+- Pendiente: las teclas H/N no comprueban si hay un campo de texto activo en ImGui
+  (pueden dispararse por accidente al renombrar un objeto); el wireframe de debug del
+  octree sigue con `glBegin/glEnd` comentado, sin reescribir a VAO/VBO; el octree
+  inicial (escena vacía) se construye con límites degenerados que la primera
+  reconstrucción sustituye, y `RebuildOctree` con la escena vacía usa un fallback de
+  límites fijos (±1000) en vez de algo más elegante.
+- Primera entrega (cargar geometría, cámara libre y orbital, materiales/texturas,
+  editor básico) funcionalmente completa. El frustum culling y el mouse picking, como
+  mecanismos de bajo nivel, ya están corregidos y verificados (ver cascada de bugs
+  arriba), pero como requisitos formales de la segunda entrega aún no se ha
+  comprobado si cumplen todo lo que pide el enunciado. Resto de la segunda entrega
+  (manejo de recursos, play/stop, serialización) y la tercera (sistema de alto nivel
+  a elección) sin revisar.
 
 ## Convenciones de Git
 
