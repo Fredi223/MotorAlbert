@@ -432,15 +432,21 @@ struct Frustum
     glm::vec4 planes[6]; 
 };
 
+// Planos del frustum a partir de la matriz view-projection (metodo de Gribb/Hartmann).
+// Con clip = vp * (x,y,z,1), un punto esta dentro si -w <= x,y,z <= w; cada desigualdad es un
+// plano, p. ej. w + x >= 0 (izquierdo) = (fila3 + fila0) . (x,y,z,1) >= 0. Los planos salen de
+// las FILAS de vp. GLM guarda las matrices por columnas (vp[i] es la columna i), asi que se
+// transpone para que rows[i] sea la fila i. Profundidad de OpenGL por defecto (-w <= z <= w).
 Frustum ExtractFrustum(const glm::mat4& vp)
 {
     Frustum f;
-    f.planes[0] = vp[3] + vp[0];
-    f.planes[1] = vp[3] - vp[0];
-    f.planes[2] = vp[3] + vp[1];
-    f.planes[3] = vp[3] - vp[1];
-    f.planes[4] = vp[3] + vp[2];
-    f.planes[5] = vp[3] - vp[2];
+    const glm::mat4 rows = glm::transpose(vp);
+    f.planes[0] = rows[3] + rows[0]; // izquierdo
+    f.planes[1] = rows[3] - rows[0]; // derecho
+    f.planes[2] = rows[3] + rows[1]; // inferior
+    f.planes[3] = rows[3] - rows[1]; // superior
+    f.planes[4] = rows[3] + rows[2]; // cercano
+    f.planes[5] = rows[3] - rows[2]; // lejano
     for (int i = 0; i < 6; ++i)
     {
         float len = glm::length(glm::vec3(f.planes[i]));
