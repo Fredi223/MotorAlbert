@@ -1279,13 +1279,18 @@ int main(int argc, char* argv[])
             float speed = cameraSpeed * deltaTime;
             if (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]) speed *= CAMERA_SPRINT_MULTIPLIER;
 
+            // Se suma la dirección de cada tecla y se normaliza el conjunto, para que
+            // combinar teclas (p. ej. W+D) no sea ×√2 más rápido que ir en línea recta.
+            // Teclas opuestas se anulan (vector cero: no hay movimiento).
             glm::vec3 right = glm::normalize(glm::cross(cameraFront, cameraUp));
-            if (keys[SDL_SCANCODE_W]) cameraPos += speed * cameraFront;
-            if (keys[SDL_SCANCODE_S]) cameraPos -= speed * cameraFront;
-            if (keys[SDL_SCANCODE_A]) cameraPos -= right * speed;
-            if (keys[SDL_SCANCODE_D]) cameraPos += right * speed;
-            if (keys[SDL_SCANCODE_E]) cameraPos += cameraUp * speed;
-            if (keys[SDL_SCANCODE_Q]) cameraPos -= cameraUp * speed;
+            glm::vec3 moveDir(0.0f);
+            if (keys[SDL_SCANCODE_W]) moveDir += cameraFront;
+            if (keys[SDL_SCANCODE_S]) moveDir -= cameraFront;
+            if (keys[SDL_SCANCODE_A]) moveDir -= right;
+            if (keys[SDL_SCANCODE_D]) moveDir += right;
+            if (keys[SDL_SCANCODE_E]) moveDir += cameraUp;
+            if (keys[SDL_SCANCODE_Q]) moveDir -= cameraUp;
+            if (glm::length(moveDir) > 1e-6f) cameraPos += glm::normalize(moveDir) * speed;
         }
 
         if (orbitActive && leftClickHeld)
