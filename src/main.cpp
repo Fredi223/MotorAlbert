@@ -183,14 +183,13 @@ glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 5.0f);
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
-float cameraSpeed = 0.1f;  
-float yaw = -90.0f;   
+float cameraSpeed = 3.0f;                       // unidades de mundo por segundo
+const float CAMERA_SPRINT_MULTIPLIER = 3.0f;    // factor al mantener Shift
+const float CAMERA_MAX_DELTA_TIME = 0.1f;       // s; acota tirones para no teletransportar la cámara
+float yaw = -90.0f;
 float pitch = 0.0f;
-float lastX = 1280.0f / 2.0f;  
-float lastY = 720.0f / 2.0f;
 bool firstMouse = true;
 float mouseSensitivity = 0.1f;
-bool mouseLeftPressed = false;
 int selectedObject = -1;
 bool showNormals = true;
 Uint32 lastNormalsToggleMs = 0;
@@ -745,6 +744,7 @@ int main(int argc, char* argv[])
     float viewportHeightF = 720.0f;
 
     int prevMouseX = 0, prevMouseY = 0;
+    bool freeLookActive = false;   // el click derecho empezó dentro del viewport
 
     std::stack<std::vector<GameObject>> undoStack;
     Uint32 lastUndoTime = 0;
@@ -1096,7 +1096,9 @@ int main(int argc, char* argv[])
         bool rightClickPressed = ImGui::IsMouseClicked(ImGuiMouseButton_Right);
         bool rightClickReleased = ImGui::IsMouseReleased(ImGuiMouseButton_Right);
 
-        if (rightClickPressed)
+        // mouseInsideViewport lo calcula el panel "Viewport" más abajo en el
+        // frame, así que aquí vale el del frame anterior (mismo dato que usa el picking).
+        if (rightClickPressed && mouseInsideViewport)
         {
             float mx = 0.f, my = 0.f;
             SDL_GetMouseState(&mx, &my);
@@ -1106,17 +1108,19 @@ int main(int argc, char* argv[])
             SDL_SetWindowRelativeMouseMode(window, true);
             SDL_HideCursor();
             firstMouse = true;
+            freeLookActive = true;
         }
 
-        if (rightClickReleased)
+        if (rightClickReleased && freeLookActive)
         {
             SDL_SetWindowRelativeMouseMode(window, false);
             SDL_ShowCursor();
 
             SDL_WarpMouseInWindow(window, prevMouseX, prevMouseY);
+            freeLookActive = false;
         }
 
-        if (rightClickHeld)
+        if (freeLookActive && rightClickHeld)
         {
             io.WantCaptureMouse = false;
             io.WantCaptureKeyboard = false;
@@ -1137,12 +1141,21 @@ int main(int argc, char* argv[])
             front.z = sin(glm::radians(yaw));
             cameraFront = glm::normalize(front);
 
+            // Duración del último frame completo (g_frameTimes está en ms).
+            float deltaTime = g_frameTimes.empty() ? 0.0f : g_frameTimes.back() / 1000.0f;
+            deltaTime = std::min(deltaTime, CAMERA_MAX_DELTA_TIME);
+
             const bool* keys = SDL_GetKeyboardState(NULL);
-            float speed = 0.05f;
+            float speed = cameraSpeed * deltaTime;
+            if (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]) speed *= CAMERA_SPRINT_MULTIPLIER;
+
+            glm::vec3 right = glm::normalize(glm::cross(cameraFront, cameraUp));
             if (keys[SDL_SCANCODE_W]) cameraPos += speed * cameraFront;
             if (keys[SDL_SCANCODE_S]) cameraPos -= speed * cameraFront;
-            if (keys[SDL_SCANCODE_A]) cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * speed;
-            if (keys[SDL_SCANCODE_D]) cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * speed;
+            if (keys[SDL_SCANCODE_A]) cameraPos -= right * speed;
+            if (keys[SDL_SCANCODE_D]) cameraPos += right * speed;
+            if (keys[SDL_SCANCODE_E]) cameraPos += cameraUp * speed;
+            if (keys[SDL_SCANCODE_Q]) cameraPos -= cameraUp * speed;
 
             view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         }
