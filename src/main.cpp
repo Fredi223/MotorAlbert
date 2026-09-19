@@ -1146,7 +1146,7 @@ int main(int argc, char* argv[])
             glm::vec3 front;
             front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
             front.y = sin(glm::radians(pitch));
-            front.z = sin(glm::radians(yaw));
+            front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
             cameraFront = glm::normalize(front);
 
             // Duración del último frame completo (g_frameTimes está en ms).
