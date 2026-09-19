@@ -865,12 +865,19 @@ int main(int argc, char* argv[])
     std::stack<std::vector<GameObject>> undoStack;
     Uint32 lastUndoTime = 0;
 
+    // El octree guarda GameObject* directos a los elementos de gameObjects (std::vector por
+    // valor). Cualquier insert/erase/push_back invalida esos punteros (reasigna el buffer o
+    // desplaza y destruye elementos), asi que toda mutacion estructural del vector debe
+    // marcar este flag; el bucle principal reconstruye el octree antes de volver a usarlo.
+    bool sceneStructureDirty = false;
+
     auto DuplicateGameObject = [&](std::vector<GameObject>& list, int index) -> int {
         if (index < 0 || index >= (int)list.size()) return -1;
         GameObject copy = list[index]; 
         copy.name = list[index].name + "_copy";
         copy.transform.position += glm::vec3(0.1f, 0.0f, 0.1f);
         list.insert(list.begin() + index + 1, std::move(copy));
+        sceneStructureDirty = true;
         return index + 1;
         };
 
@@ -878,6 +885,7 @@ int main(int argc, char* argv[])
         if (index < 0 || index >= (int)list.size()) return;
         list[index].Destroy();
         list.erase(list.begin() + index);
+        sceneStructureDirty = true;
         if (selected == index) {
             selected = -1;
         }
@@ -1711,7 +1719,6 @@ int main(int argc, char* argv[])
             if (ctrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
                 if (selectedObject >= 0 && selectedObject < (int)gameObjects.size()) {
                     int newIdx = DuplicateGameObject(gameObjects, selectedObject);
-                    RebuildOctree();
                     if (newIdx != -1) selectedObject = newIdx;
                 }
             }
@@ -1752,7 +1759,6 @@ int main(int argc, char* argv[])
                 }
                 if (ImGui::MenuItem("Delete")) {
                     EraseGameObjectAt(gameObjects, i, selectedObject);
-                    RebuildOctree();
                 }
                 ImGui::EndPopup();
             }
@@ -1787,6 +1793,7 @@ int main(int argc, char* argv[])
                             if (selectedObject == src) selectedObject = dst;
                             else if (selectedObject >= dst && selectedObject < src) selectedObject++;
                         }
+                        sceneStructureDirty = true;
                         Console::LogInfo("Reordered: %d -> %d", src, dst);
                     }
                 }
@@ -1795,6 +1802,14 @@ int main(int argc, char* argv[])
 
             ImGui::PopStyleColor();
             ImGui::PopID();
+        }
+
+        // Reconstruir el octree justo aqui (y no al final del frame): el panel Viewport, mas
+        // abajo, hace picking consultando el octree en este mismo frame.
+        if (sceneStructureDirty)
+        {
+            RebuildOctree();
+            sceneStructureDirty = false;
         }
 
         if (ImGui::BeginPopupModal("Rename Popup", NULL, ImGuiWindowFlags_AlwaysAutoResize))
