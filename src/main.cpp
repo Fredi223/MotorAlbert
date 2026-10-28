@@ -21,29 +21,19 @@
 
 #include "Camera.h"
 #include "DdsLoader.h"
+#include "FrameTiming.h"
 #include "GameObject.h"
 #include "Geometry.h"
 #include "Logger.h"
 #include "ModuleModelLoader.h"
 #include "Octree.h"
 #include "Primitives.h"
+#include "Renderer.h"
 #include "Scene.h"
 #include "Shaders.h"
 #include "SystemInfo.h"
 #include "TextureLoader.h"
 #include "UndoHistory.h"
-
-int g_fpsCap = 60;
-ImVec4 g_clearColor = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
-bool g_enableFrustumCulling = true;
-bool g_vsync = true;
-
-static const int PERF_HISTORY = 200;
-std::deque<float> g_frameTimes; // ms
-Uint64 g_lastFrameTick = 0;
-
-GLuint checkerTexture = 0;
-
 
 // ============================================================
 // CONTROL DE CÁMARA
@@ -51,11 +41,8 @@ GLuint checkerTexture = 0;
 Camera camera;
 bool firstMouse = true;
 int selectedObject = -1;
-bool showNormals = false;
-bool showFaceNormals = false;   // global: normales por cara de todos los objetos
 Uint32 lastNormalsToggleMs = 0;
 const Uint32 NORMALS_TOGGLE_DEBOUNCE = 150;
-const float NORMAL_LENGTH_PERCENT = 0.03f; // % de la diagonal del AABB local de la malla
 
 // Target orbital = centro del AABB de mundo del objeto seleccionado; sin selección, el origen.
 static void GetOrbitTarget(std::vector<GameObject>& objs, int sel, glm::vec3& outCenter, float& outRadius)
@@ -113,11 +100,6 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
         return false;
     }
 
-    if (!SDL_GL_SetSwapInterval(g_vsync ? 1 : 0))
-    {
-        Console::LogError("Error configurando Swap Interval: %s", SDL_GetError());
-    }
-
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
         Console::LogError("Error cargando funciones GLAD: %s", SDL_GetError());
@@ -154,8 +136,9 @@ int main(int argc, char* argv[])
         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION,
         aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision(), IMGUI_VERSION);
 
-    g_lastFrameTick = SDL_GetPerformanceCounter();
-    g_frameTimes.assign(PERF_HISTORY, 0.0f);
+    FrameTiming timing;
+    timing.Init();
+    timing.ApplyVsync();
 
     glm::mat4 view = camera.GetViewMatrix();
     glm::mat4 projection = camera.GetProjectionMatrix(1280.0f / 720.0f);
@@ -180,108 +163,8 @@ int main(int argc, char* argv[])
     ImGui_ImplOpenGL3_Init("#version 460");
     Console::LogInfo("ImGui inicializado (docking, backends SDL3 + OpenGL3)");
 
-    GLuint shaderProgram = CreateShaderProgram(vertexShaderSource, fragmentShaderSource);
-    GLuint normalShaderProgram = CreateShaderProgram(normalVertexShaderSrc, normalFragmentShaderSrc, normalGeometryShaderSrc);
-    GLuint gridShaderProgram = CreateShaderProgram(gridVertexShaderSrc, gridFragmentShaderSrc);
-
-    // ============================================================
-    // FRAMEBUFFER PARA EL VIEWPORT DE IMGUI
-    // ============================================================
-    GLuint viewportFBO = 0, viewportTexture = 0, viewportRBO = 0;
-    int viewportWidth = 1280;
-    int viewportHeight = 720;
-
-    glGenFramebuffers(1, &viewportFBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-    glViewport(0, 0, viewportWidth, viewportHeight);
-
-    glGenTextures(1, &viewportTexture);
-    glBindTexture(GL_TEXTURE_2D, viewportTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, viewportWidth, viewportHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, viewportTexture, 0);
-
-    glGenRenderbuffers(1, &viewportRBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, viewportRBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, viewportWidth, viewportHeight);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, viewportRBO);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        Console::LogError("El framebuffer del viewport no esta completo");
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // ============================================================
-    // CREAR TEXTURA CHECKERBOARD
-    // ============================================================
-    const int CHECKERS_WIDTH = 64;
-    const int CHECKERS_HEIGHT = 64;
-    GLubyte checkerImage[CHECKERS_HEIGHT][CHECKERS_WIDTH][4];
-
-    for (int i = 0; i < CHECKERS_HEIGHT; ++i)
-    {
-        for (int j = 0; j < CHECKERS_WIDTH; ++j)
-        {
-            int c = (((((i & 0x8) == 0) ^ ((j & 0x8) == 0)) ? 1 : 0)) * 255;
-            checkerImage[i][j][0] = (GLubyte)c; // R
-            checkerImage[i][j][1] = (GLubyte)c; // G
-            checkerImage[i][j][2] = (GLubyte)c; // B
-            checkerImage[i][j][3] = 255;        // A
-        }
-    }
-
-    glGenTextures(1, &checkerTexture);
-    glBindTexture(GL_TEXTURE_2D, checkerTexture);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, CHECKERS_WIDTH, CHECKERS_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, checkerImage);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // ========================================================
-    // CREAR GRID (REJILLA DE REFERENCIA)
-    // ========================================================
-    GLuint gridVAO, gridVBO;
-    std::vector<float> gridVertices;
-
-    int gridSize = 20;
-    float spacing = 1.0f;
-
-    for (int i = -gridSize; i <= gridSize; ++i)
-    {
-        // Líneas paralelas al eje Z (x = i)
-        gridVertices.push_back((float)i * spacing);
-        gridVertices.push_back(0.0f);
-        gridVertices.push_back((float)-gridSize * spacing);
-
-        gridVertices.push_back((float)i * spacing);
-        gridVertices.push_back(0.0f);
-        gridVertices.push_back((float)gridSize * spacing);
-
-        // Líneas paralelas al eje X (z = i)
-        gridVertices.push_back((float)-gridSize * spacing);
-        gridVertices.push_back(0.0f);
-        gridVertices.push_back((float)i * spacing);
-
-        gridVertices.push_back((float)gridSize * spacing);
-        gridVertices.push_back(0.0f);
-        gridVertices.push_back((float)i * spacing);
-    }
-
-    glGenVertexArrays(1, &gridVAO);
-    glGenBuffers(1, &gridVBO);
-    glBindVertexArray(gridVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, gridVBO);
-    glBufferData(GL_ARRAY_BUFFER, gridVertices.size() * sizeof(float), gridVertices.data(), GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    glBindVertexArray(0);
+    Renderer renderer;
+    renderer.Init(1280, 720);
 
     // ========================================================
     // ESCENA
@@ -289,26 +172,13 @@ int main(int argc, char* argv[])
     // La escena empieza vacia; RebuildOctree recalcula los limites del octree cada vez que se
     // anade algo (la Baker House inicial, drag & drop o una primitiva).
     Scene scene;
-    scene.defaultTexture = checkerTexture;
+    scene.defaultTexture = renderer.GetCheckerTexture();
     std::vector<GameObject>& gameObjects = scene.objects;   // alias provisional para los paneles del editor
 
     // El historial de undo guarda snapshots que pueden usar texturas que ya no estan en la
     // escena: la escena le pregunta antes de liberar una.
     UndoHistory history;
     scene.isTextureUsedElsewhere = [&history](GLuint tex) { return history.UsesTexture(tex); };
-
-    glUseProgram(shaderProgram);
-    glUniform1i(glGetUniformLocation(shaderProgram, "uTexture"), 0);
-
-    GLint uModelLoc = glGetUniformLocation(shaderProgram, "uModel");
-    GLint uViewLoc = glGetUniformLocation(shaderProgram, "uView");
-    GLint uProjLoc = glGetUniformLocation(shaderProgram, "uProjection");
-
-    GLint normalUModelLoc = glGetUniformLocation(normalShaderProgram, "uModel");
-    GLint normalUViewLoc = glGetUniformLocation(normalShaderProgram, "uView");
-    GLint normalUProjLoc = glGetUniformLocation(normalShaderProgram, "uProjection");
-    GLint normalULengthLoc = glGetUniformLocation(normalShaderProgram, "uNormalLength");
-    GLint normalUColorLoc = glGetUniformLocation(normalShaderProgram, "uNormalColor");
 
     bool running = true;
     SDL_Event e;
@@ -458,8 +328,8 @@ int main(int argc, char* argv[])
                 {
                     Uint32 now = SDL_GetTicks();
                     if (now - lastNormalsToggleMs > NORMALS_TOGGLE_DEBOUNCE) {
-                        showNormals = !showNormals;
-                        Console::LogInfo("Mostrar normales: %s", showNormals ? "ON" : "OFF");
+                        renderer.showNormals = !renderer.showNormals;
+                        Console::LogInfo("Mostrar normales: %s", renderer.showNormals ? "ON" : "OFF");
                         lastNormalsToggleMs = now;
                     }
                 }
@@ -542,8 +412,8 @@ int main(int argc, char* argv[])
                 ImGui::MenuItem("Inspector", nullptr, &showInspector);
                 ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy);
                 ImGui::MenuItem("Configuration", nullptr, &showConfig);
-                ImGui::MenuItem("Normals", nullptr, &showNormals);
-                ImGui::MenuItem("Face Normals", nullptr, &showFaceNormals);
+                ImGui::MenuItem("Normals", nullptr, &renderer.showNormals);
+                ImGui::MenuItem("Face Normals", nullptr, &renderer.showFaceNormals);
                 ImGui::MenuItem("About", nullptr, &showAbout);
                 ImGui::EndMenu();
             }
@@ -637,8 +507,8 @@ int main(int argc, char* argv[])
             ReadMouseDelta(dx, dy);
             camera.Rotate(dx, dy);
 
-            // Duración del último frame completo (g_frameTimes está en ms).
-            float deltaTime = g_frameTimes.empty() ? 0.0f : g_frameTimes.back() / 1000.0f;
+            // Duración del último frame completo (lo mide FrameTiming).
+            float deltaTime = timing.LastFrameSeconds();
 
             const bool* keys = SDL_GetKeyboardState(NULL);
             float forward = (keys[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_S] ? 1.0f : 0.0f);
@@ -667,11 +537,6 @@ int main(int argc, char* argv[])
         // Único punto donde se recalcula view: refleja la cámara tras cualquier modo, la rueda
         // o F. El picking usa camera.position como origen del rayo, y debe coincidir.
         view = camera.GetViewMatrix();
-
-        glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-        glViewport(0, 0, viewportWidth, viewportHeight);
-        glClearColor(g_clearColor.x, g_clearColor.y, g_clearColor.z, g_clearColor.w);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // ============================================================
         //  Actualizar proyección según el tamaño del viewport
@@ -813,7 +678,7 @@ int main(int argc, char* argv[])
                     }
 
                     ImGui::Checkbox("Mostrar normales por cara (mesh)", &go.showFaceNormals);
-                    ImGui::TextDisabled("Global Normals: %s | Face Normals: %s", showNormals ? "ON" : "OFF", showFaceNormals ? "ON" : "OFF");
+                    ImGui::TextDisabled("Global Normals: %s | Face Normals: %s", renderer.showNormals ? "ON" : "OFF", renderer.showFaceNormals ? "ON" : "OFF");
                 }
 
                 ImGui::Separator();
@@ -860,7 +725,7 @@ int main(int argc, char* argv[])
                     if (ImGui::Button("Assign CheckerTexture"))
                     {
                         const GLuint oldTex = go.texComp.textureID;
-                        go.texComp.textureID = checkerTexture;
+                        go.texComp.textureID = renderer.GetCheckerTexture();
                         go.texComp.path.clear();
                         scene.ReleaseTextureIfUnused(oldTex);
                         Console::LogInfo("Checker texture asignada a %s", go.name.c_str());
@@ -917,20 +782,20 @@ int main(int argc, char* argv[])
                     SDL_SetWindowSize(window, 1280, 720);
                 }
 
-                ImGui::Checkbox("VSync", &g_vsync);
+                ImGui::Checkbox("VSync", &timing.vsync);
                 if (ImGui::IsItemEdited()) {
-                    SDL_GL_SetSwapInterval(g_vsync ? 1 : 0);
+                    timing.ApplyVsync();
                 }
 
-                ImGui::InputInt("FPS Cap (0 = uncapped)", &g_fpsCap);
-                if (g_fpsCap < 0) g_fpsCap = 0;
+                ImGui::InputInt("FPS Cap (0 = uncapped)", &timing.fpsCap);
+                if (timing.fpsCap < 0) timing.fpsCap = 0;
 
-                ImGui::ColorEdit3("Viewport Clear Color", (float*)&g_clearColor);
+                ImGui::ColorEdit3("Viewport Clear Color", glm::value_ptr(renderer.clearColor));
 
                 ImGui::Separator();
                 ImGui::Text("Culling");
 
-                ImGui::Checkbox("Enable Frustum Culling", &g_enableFrustumCulling);
+                ImGui::Checkbox("Enable Frustum Culling", &renderer.frustumCulling);
             }
 
             // --- Input / camara ---
@@ -953,7 +818,7 @@ int main(int argc, char* argv[])
                 const bool wrapChanged = ImGui::Combo("Wrap", &texWrap, wraps, IM_ARRAYSIZE(wraps));
                 ImGui::TextDisabled("Se aplica a las texturas ya cargadas");
 
-                std::vector<GLuint> texIds{ checkerTexture };
+                std::vector<GLuint> texIds{ renderer.GetCheckerTexture() };
                 for (const GameObject& o : gameObjects)
                     if (o.texComp.textureID != 0) texIds.push_back(o.texComp.textureID);
                 std::sort(texIds.begin(), texIds.end());
@@ -1008,15 +873,15 @@ int main(int argc, char* argv[])
             // --- Performance / graphs ---
             if (ImGui::CollapsingHeader("Performance", ImGuiTreeNodeFlags_DefaultOpen)) {
                 float avg = 0.0f;
-                for (float t : g_frameTimes) avg += t;
-                avg = g_frameTimes.empty() ? 0.0f : avg / (float)g_frameTimes.size();
+                for (float t : timing.FrameTimesMs()) avg += t;
+                avg = timing.FrameTimesMs().empty() ? 0.0f : avg / (float)timing.FrameTimesMs().size();
                 float fps = avg > 0.0f ? 1000.0f / avg : 0.0f;
 
                 ImGui::Text("FPS (avg): %.1f", fps);
                 ImGui::Text("Frame ms (avg): %.3f", avg);
                 // PlotLines necesita memoria contigua y un deque no lo es: se copia a un vector.
                 static std::vector<float> plotBuf;
-                plotBuf.assign(g_frameTimes.begin(), g_frameTimes.end());
+                plotBuf.assign(timing.FrameTimesMs().begin(), timing.FrameTimesMs().end());
 
                 ImGui::PlotLines("Frame ms", plotBuf.data(), (int)plotBuf.size(), 0, nullptr, 0.0f, 50.0f, ImVec2(0, 80));
                 ImGui::Text("Last frame time: %.3f ms", plotBuf.empty() ? 0.0f : plotBuf.back());
@@ -1024,76 +889,9 @@ int main(int argc, char* argv[])
 
             ImGui::End();
         }
-        // === DIBUJAR GRID ===
-        glUseProgram(gridShaderProgram);
-        glUniformMatrix4fv(glGetUniformLocation(gridShaderProgram, "uView"), 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(glGetUniformLocation(gridShaderProgram, "uProjection"), 1, GL_FALSE, glm::value_ptr(projection));
-        glBindVertexArray(gridVAO);
-        glDrawArrays(GL_LINES, 0, (GLsizei)(gridVertices.size() / 3));
-        glBindVertexArray(0);
-
-        // === DIBUJAR MODELOS ===
-        glUseProgram(shaderProgram);
-        glUniformMatrix4fv(uViewLoc, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(uProjLoc, 1, GL_FALSE, glm::value_ptr(projection));
-
-        glm::mat4 vp = projection * view;
-        Frustum frustum = ExtractFrustum(vp);
-
-        // El octree se consulta con una caja fija que cubre toda la escena; el culling real es
-        // el test del AABB de cada objeto contra el frustum.
-        std::vector<GameObject*> visibleObjects;
-        scene.octree.Query(glm::vec3(-1000.0f), glm::vec3(1000.0f), visibleObjects);
-
-        int drawnCount = 0;
-
-        for (GameObject* goPtr : visibleObjects)
-        {
-            GameObject& go = *goPtr;
-            if (go.hidden) continue;
-
-            if (g_enableFrustumCulling)
-            {
-                if (!AABBInsideFrustum(frustum, go.worldAabbMin, go.worldAabbMax))
-                    continue;
-            }
-
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, go.texComp.textureID != 0 ? go.texComp.textureID : checkerTexture);
-
-            go.Draw(uModelLoc);
-            drawnCount++;
-
-            bool drawNormalsForThis = (go.normalsMode == GameObject::NM_ForceOn) ||
-                (go.normalsMode == GameObject::NM_UseGlobal && showNormals);
-            const bool drawFaceNormalsForThis = go.showFaceNormals || showFaceNormals;
-            if (drawNormalsForThis || drawFaceNormalsForThis)
-            {
-                glUseProgram(normalShaderProgram);
-                glm::mat4 model = go.transform.GetMatrix();
-                glUniformMatrix4fv(normalUModelLoc, 1, GL_FALSE, glm::value_ptr(model));
-                glUniformMatrix4fv(normalUViewLoc, 1, GL_FALSE, glm::value_ptr(view));
-                glUniformMatrix4fv(normalUProjLoc, 1, GL_FALSE, glm::value_ptr(projection));
-
-                // Offset proporcional al AABB local de la malla (no un valor fijo),
-                // para que se vea razonable tanto en un modelo diminuto como en uno enorme.
-                float localDiag = glm::length(go.aabbMax - go.aabbMin);
-                glUniform1f(normalULengthLoc, localDiag * NORMAL_LENGTH_PERCENT);
-
-                if (drawNormalsForThis)
-                {
-                    glUniform3f(normalUColorLoc, 0.0f, 1.0f, 0.0f);
-                    go.meshComp.mesh.DrawNormals();
-                }
-                if (drawFaceNormalsForThis)
-                {
-                    glUniform3f(normalUColorLoc, 1.0f, 0.2f, 1.0f);
-                    go.meshComp.mesh.DrawFaceNormals();
-                }
-                glUseProgram(shaderProgram);
-            }
-        }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // Render de la escena en el framebuffer del viewport. Va aqui, antes de Hierarchy y del undo,
+        // porque esos pueden borrar o sustituir objetos y el octree no se reconstruye hasta despues.
+        int drawnCount = renderer.Render(scene, view, projection);
 
         Console::DrawConsole("Console", &showConsole);
 
@@ -1239,10 +1037,10 @@ int main(int argc, char* argv[])
 
         ImGui::Begin("Viewport");
         ImGui::TextColored(
-            g_enableFrustumCulling ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f)
+            renderer.frustumCulling ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f)
             : ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
             "Frustum Culling: %s",
-            g_enableFrustumCulling ? "ON" : "OFF"
+            renderer.frustumCulling ? "ON" : "OFF"
         );
 
         ImGui::Text("Drawn objects: %d", drawnCount);
@@ -1262,19 +1060,11 @@ int main(int argc, char* argv[])
         // daria un framebuffer vacio y una proyeccion con aspect = x/0 (infinito o NaN).
         const int newViewportW = std::max(1, (int)size.x);
         const int newViewportH = std::max(1, (int)size.y);
-        if (newViewportW != viewportWidth || newViewportH != viewportHeight)
+        if (newViewportW != renderer.GetViewportWidth() || newViewportH != renderer.GetViewportHeight())
         {
-            viewportWidth = newViewportW;
-            viewportHeight = newViewportH;
             viewportWidthF = (float)newViewportW;
             viewportHeightF = (float)newViewportH;
-
-            glBindTexture(GL_TEXTURE_2D, viewportTexture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, viewportWidth, viewportHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
-
-            glBindRenderbuffer(GL_RENDERBUFFER, viewportRBO);
-            glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, viewportWidth, viewportHeight);
-            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, viewportRBO);
+            renderer.ResizeViewport(newViewportW, newViewportH);
         }
 
         // ========================================================
@@ -1345,7 +1135,7 @@ int main(int argc, char* argv[])
             }
         }
 
-        ImGui::Image((ImTextureID)(intptr_t)viewportTexture, size, ImVec2(0, 1), ImVec2(1, 0));
+        ImGui::Image((ImTextureID)(intptr_t)renderer.GetViewportTexture(), size, ImVec2(0, 1), ImVec2(1, 0));
         ImGui::End(); // cierra Viewport
 
         // ============================================================
@@ -1362,25 +1152,7 @@ int main(int argc, char* argv[])
             ImGui::RenderPlatformWindowsDefault();
             SDL_GL_MakeCurrent(backup_current_window, backup_current_context);
         }
-        Uint64 now = SDL_GetPerformanceCounter();
-        Uint64 freq = SDL_GetPerformanceFrequency();
-        float deltaMs = (float)((now - g_lastFrameTick) * 1000.0 / (double)freq);
-        g_lastFrameTick = now;
-
-        g_frameTimes.push_back(deltaMs);
-        if (g_frameTimes.size() > PERF_HISTORY) g_frameTimes.pop_front();
-
-        if (g_fpsCap > 0) {
-            float targetMs = 1000.0f / (float)g_fpsCap;
-            if (deltaMs < targetMs) {
-                Uint32 waitMs = (Uint32)std::ceil(targetMs - deltaMs);
-                SDL_Delay(waitMs);
-                Uint64 now2 = SDL_GetPerformanceCounter();
-                deltaMs += (float)((now2 - g_lastFrameTick) * 1000.0 / (double)freq);
-                g_lastFrameTick = now2;
-                g_frameTimes.back() = deltaMs;
-            }
-        }
+        timing.EndFrame();
         SDL_GL_SwapWindow(window);
     }
 
@@ -1396,15 +1168,7 @@ int main(int argc, char* argv[])
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
-    glDeleteProgram(shaderProgram);
-    glDeleteProgram(normalShaderProgram);
-    glDeleteProgram(gridShaderProgram);
-    glDeleteVertexArrays(1, &gridVAO);
-    glDeleteBuffers(1, &gridVBO);
-    glDeleteTextures(1, &checkerTexture);
-    glDeleteFramebuffers(1, &viewportFBO);
-    glDeleteTextures(1, &viewportTexture);
-    glDeleteRenderbuffers(1, &viewportRBO);
+    renderer.Shutdown();
 
     SDL_GL_DestroyContext(context);
     SDL_DestroyWindow(window);

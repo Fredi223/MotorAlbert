@@ -40,6 +40,10 @@ add_executable(MotorAlbert
     src/UndoHistory.h
     src/DdsLoader.cpp
     src/DdsLoader.h
+    src/FrameTiming.cpp
+    src/FrameTiming.h
+    src/Renderer.cpp
+    src/Renderer.h
     src/GameObject.h
     src/Transform.h
     src/stb_image.h
