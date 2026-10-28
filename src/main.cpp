@@ -1,58 +1,45 @@
-﻿#include <iostream>
-#include <vector>
-#include <string>
-#include <algorithm>
+﻿#include <algorithm>
+#include <cfloat>
+#include <cstring>
+#include <deque>
 #include <filesystem>
+#include <limits>
+#include <string>
+#include <vector>
+
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <assimp/version.h>
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_opengl3.h"
-#include "imgui_internal.h"
-
-#include <limits>
-
-#include <cfloat>
-#include "ModuleModelLoader.h"
-#include "GameObject.h"
-#include "Primitives.h"
-#include "SystemInfo.h"
-#include "DdsLoader.h"
+#include "imgui_internal.h"   // DockBuilder
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-#include "Octree.h"
 
+#include "DdsLoader.h"
+#include "GameObject.h"
 #include "Logger.h"
+#include "ModuleModelLoader.h"
+#include "Octree.h"
+#include "Primitives.h"
+#include "SystemInfo.h"
 
-#include <deque>
-#include <assimp/version.h> 
-
-int g_fpsCap = 60;                      
-ImVec4 g_clearColor = ImVec4(0.1f, 0.1f, 0.1f, 1.0f); 
-bool g_showPerfGraph = true;
-
+int g_fpsCap = 60;
+ImVec4 g_clearColor = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
 bool g_enableFrustumCulling = true;
-
-bool g_vsync = true;   // <-- AÑADIR ESTA LÍNEA
+bool g_vsync = true;
 
 static const int PERF_HISTORY = 200;
 std::deque<float> g_frameTimes; // ms
 Uint64 g_lastFrameTick = 0;
 
-
 GLuint checkerTexture = 0;
-// ============================================================
-// FUNCIONES AUXILIARES
-// ============================================================
-inline float compMax(const glm::vec3& v) {
-    return std::max(v.x, std::max(v.y, v.z));
-}
-
 
 // ============================================================
 // SHADERS BÁSICOS
@@ -61,13 +48,13 @@ const char* vertexShaderSource = R"(
 #version 460 core
 layout (location = 0) in vec3 aPos;
 layout (location = 1) in vec3 aNormal;
-layout (location = 2) in vec2 aTexCoord;   // <--- NUEVO
+layout (location = 2) in vec2 aTexCoord;
 layout (location = 3) in vec3 aColor;
 
 out vec3 Normal;
 out vec3 FragPos;
 out vec3 Color;
-out vec2 TexCoord;                         // <--- NUEVO
+out vec2 TexCoord;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -78,7 +65,7 @@ void main()
     FragPos = vec3(uModel * vec4(aPos, 1.0));
     Normal = mat3(transpose(inverse(uModel))) * aNormal;
     Color = aColor;
-    TexCoord = aTexCoord;                  // <--- PASAR UV
+    TexCoord = aTexCoord;
     gl_Position = uProjection * uView * vec4(FragPos, 1.0);
 }
 )";
@@ -87,19 +74,19 @@ const char* fragmentShaderSource = R"(
 #version 460 core
 in vec3 Normal;
 in vec3 Color;
-in vec2 TexCoord;              // <--- NUEVO
+in vec2 TexCoord;
 
 out vec4 FragColor;
 
-uniform sampler2D uTexture;    // <--- NUEVO sampler de textura
+uniform sampler2D uTexture;
 
 void main()
 {
     vec3 light = normalize(vec3(0.3, 0.5, 0.8));
     float diff = max(dot(normalize(Normal), light), 0.0);
 
-    vec3 texColor = texture(uTexture, TexCoord).rgb;  // <--- LEE TEXTURA
-    vec3 finalColor = texColor * (0.4 + diff * 0.6);  // <--- APLICA ILUMINACIÓN
+    vec3 texColor = texture(uTexture, TexCoord).rgb;
+    vec3 finalColor = texColor * (0.4 + diff * 0.6);   // luz ambiente 0.4 + difusa
 
     FragColor = vec4(finalColor, 1.0);
 }
@@ -292,7 +279,7 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
         return false;
     }
 
-    if (!SDL_GL_SetSwapInterval(1))
+    if (!SDL_GL_SetSwapInterval(g_vsync ? 1 : 0))
     {
         Console::LogError("Error configurando Swap Interval: %s", SDL_GetError());
     }
@@ -305,7 +292,6 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
 
     glViewport(0, 0, width, height);
     glEnable(GL_DEPTH_TEST);
-    glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
 
     Console::LogInfo("OpenGL %s inicializado correctamente (GLAD).", (const char*)glGetString(GL_VERSION));
     Console::LogInfo("GPU: %s", (const char*)glGetString(GL_RENDERER));
@@ -316,29 +302,32 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
 // ============================================================
 // COMPILAR Y CREAR SHADER PROGRAM
 // ============================================================
-GLuint CreateShaderProgram(const char* vertexSrc, const char* fragmentSrc)
+static GLuint CompileShader(GLenum type, const char* src)
 {
-    auto CompileShader = [](GLenum type, const char* src) -> GLuint
-        {
-            GLuint shader = glCreateShader(type);
-            glShaderSource(shader, 1, &src, NULL);
-            glCompileShader(shader);
-            GLint success;
-            glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-            if (!success)
-            {
-                char info[512];
-                glGetShaderInfoLog(shader, 512, NULL, info);
-                Console::LogError("Error compilando shader: %s", info);
-            }
-            return shader;
-        };
+    GLuint shader = glCreateShader(type);
+    glShaderSource(shader, 1, &src, NULL);
+    glCompileShader(shader);
+    GLint success;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        char info[512];
+        glGetShaderInfoLog(shader, 512, NULL, info);
+        Console::LogError("Error compilando shader: %s", info);
+    }
+    return shader;
+}
 
+// geometrySrc es opcional (solo lo usa el shader de normales).
+GLuint CreateShaderProgram(const char* vertexSrc, const char* fragmentSrc, const char* geometrySrc = nullptr)
+{
     GLuint vs = CompileShader(GL_VERTEX_SHADER, vertexSrc);
+    GLuint gs = geometrySrc ? CompileShader(GL_GEOMETRY_SHADER, geometrySrc) : 0;
     GLuint fs = CompileShader(GL_FRAGMENT_SHADER, fragmentSrc);
 
     GLuint program = glCreateProgram();
     glAttachShader(program, vs);
+    if (gs) glAttachShader(program, gs);
     glAttachShader(program, fs);
     glLinkProgram(program);
 
@@ -352,54 +341,38 @@ GLuint CreateShaderProgram(const char* vertexSrc, const char* fragmentSrc)
     }
 
     glDeleteShader(vs);
+    if (gs) glDeleteShader(gs);
     glDeleteShader(fs);
 
     return program;
 }
 
-
-GLuint CreateNormalShaderProgram()
+// Sube una imagen a una textura RGBA con mipmaps. Se fuerza RGBA (4 canales) porque una imagen de 1
+// o 2 canales (grises), o de 3 con ancho no multiplo de 4, se subiria con un formato o una
+// alineacion que no le corresponde. Devuelve 0 si stb_image no puede leerla.
+static GLuint LoadImageTexture(const std::string& path)
 {
-    auto CompileShader = [](GLenum type, const char* src) -> GLuint
-        {
-            GLuint shader = glCreateShader(type);
-            glShaderSource(shader, 1, &src, NULL);
-            glCompileShader(shader);
-            GLint success;
-            glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-            if (!success)
-            {
-                char info[512];
-                glGetShaderInfoLog(shader, 512, NULL, info);
-                Console::LogError("Error compilando shader: %s", info);
-            }
-            return shader;
-        };
-
-    GLuint vs = CompileShader(GL_VERTEX_SHADER, normalVertexShaderSrc);
-    GLuint gs = CompileShader(GL_GEOMETRY_SHADER, normalGeometryShaderSrc);
-    GLuint fs = CompileShader(GL_FRAGMENT_SHADER, normalFragmentShaderSrc);
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    glAttachShader(program, gs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
-
-    GLint success;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success)
+    int w, h, channels;
+    unsigned char* img = stbi_load(path.c_str(), &w, &h, &channels, 4);
+    if (!img)
     {
-        char info[512];
-        glGetProgramInfoLog(program, 512, NULL, info);
-        Console::LogError("Error linkeando shader de normales: %s", info);
+        Console::LogError("stb_image: no se pudo cargar la textura %s (%s)", path.c_str(), stbi_failure_reason());
+        return 0;
     }
 
-    glDeleteShader(vs);
-    glDeleteShader(gs);
-    glDeleteShader(fs);
+    GLuint tex;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    stbi_image_free(img);
 
-    return program;
+    Console::LogInfo("stb_image: textura cargada %s (%dx%d, %d canales)", path.c_str(), w, h, channels);
+    return tex;
 }
 
 bool RayIntersectsAABB(const glm::vec3& rayOrig, const glm::vec3& rayDir,
@@ -427,15 +400,15 @@ bool RayIntersectsAABB(const glm::vec3& rayOrig, const glm::vec3& rayDir,
 
     if (tzmin > tmin) tmin = tzmin;
     if (tzmax < tmax) tmax = tzmax;
-    if (tmax < 0.0f) return false; 
+    if (tmax < 0.0f) return false;
 
-    outT = (tmin >= 0.0f) ? tmin : tmax; 
+    outT = (tmin >= 0.0f) ? tmin : tmax;
     return true;
 }
 
 struct Frustum
 {
-    glm::vec4 planes[6]; 
+    glm::vec4 planes[6];
 };
 
 // Planos del frustum a partir de la matriz view-projection (metodo de Gribb/Hartmann).
@@ -534,64 +507,21 @@ glm::vec3 ScreenToWorldRay_UnProject(float mouseX, float mouseY,
     return glm::normalize(winFar - winNear);
 }
 
+// AABB local de la malla. Todas las mallas usan el formato de vertice de SetupMesh:
+// 11 floats (pos3, normal3, uv2, color3), con la posicion al principio.
 bool ComputeAABBFromMesh(const Mesh& mesh, glm::vec3& outMin, glm::vec3& outMax)
 {
+    const size_t VERTEX_STRIDE_FLOATS = 11;
     outMin = glm::vec3(0.0f);
     outMax = glm::vec3(0.0f);
+    if (mesh.vertices.size() < VERTEX_STRIDE_FLOATS) return false;
 
-    if (mesh.vertexCount == 0 || mesh.vertices.empty()) return false;
-
-    size_t totalFloats = mesh.vertices.size();
-    size_t vc = static_cast<size_t>(mesh.vertexCount);
-
-    size_t stride = 0;
-    if (vc > 0 && totalFloats % vc == 0)
+    glm::vec3 minB(FLT_MAX), maxB(-FLT_MAX);
+    for (size_t idx = 0; idx + 2 < mesh.vertices.size(); idx += VERTEX_STRIDE_FLOATS)
     {
-        stride = totalFloats / vc;
-    }
-    else if (totalFloats >= vc * 11)
-    {
-        stride = 11;
-    }
-    else if (totalFloats >= vc * 8) 
-    {
-        stride = 8;
-    }
-    else
-    {
-        Console::LogInfo("ComputeAABBFromMesh: imposible deducir stride (vertices.size=%zu, vertexCount=%zu)", totalFloats, vc);
-        return false;
-    }
-
-    if (stride < 3)
-    {
-        Console::LogInfo("ComputeAABBFromMesh: stride detectado < 3, imposible (stride=%zu)", stride);
-        return false;
-    }
-
-    size_t expected = vc * stride;
-    if (totalFloats < expected)
-    {
-        Console::LogInfo("ComputeAABBFromMesh: datos insuficientes (got=%zu expected=%zu)", totalFloats, expected);
-        return false;
-    }
-
-    glm::vec3 minB(std::numeric_limits<float>::infinity());
-    glm::vec3 maxB(-std::numeric_limits<float>::infinity());
-
-    for (size_t i = 0; i < vc; ++i)
-    {
-        size_t idx = i * stride;
-        if (idx + 2 >= totalFloats) break;
         glm::vec3 pos(mesh.vertices[idx + 0], mesh.vertices[idx + 1], mesh.vertices[idx + 2]);
         minB = glm::min(minB, pos);
         maxB = glm::max(maxB, pos);
-    }
-
-    if (!std::isfinite(minB.x) || !std::isfinite(maxB.x))
-    {
-        Console::LogInfo("ComputeAABBFromMesh: fallo al calcular min/max");
-        return false;
     }
 
     outMin = minB;
@@ -605,10 +535,9 @@ bool ComputeAABBFromMesh(const Mesh& mesh, glm::vec3& outMin, glm::vec3& outMax)
 // ============================================================
 int main(int argc, char* argv[])
 {
-
     Console::Init();
 
-     stbi_set_flip_vertically_on_load(true);
+    stbi_set_flip_vertically_on_load(true);
 
     SDL_Window* window = nullptr;
     SDL_GLContext context;
@@ -624,12 +553,8 @@ int main(int argc, char* argv[])
         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION,
         aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision(), IMGUI_VERSION);
 
-    if (g_vsync) SDL_GL_SetSwapInterval(1);
-    else SDL_GL_SetSwapInterval(0);
-
     g_lastFrameTick = SDL_GetPerformanceCounter();
     g_frameTimes.assign(PERF_HISTORY, 0.0f);
-
 
     glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
@@ -642,9 +567,9 @@ int main(int argc, char* argv[])
     // ============================================================
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; 
-    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; 
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
@@ -658,7 +583,7 @@ int main(int argc, char* argv[])
     Console::LogInfo("ImGui inicializado (docking, backends SDL3 + OpenGL3)");
 
     GLuint shaderProgram = CreateShaderProgram(vertexShaderSource, fragmentShaderSource);
-    GLuint normalShaderProgram = CreateNormalShaderProgram();
+    GLuint normalShaderProgram = CreateShaderProgram(normalVertexShaderSrc, normalFragmentShaderSrc, normalGeometryShaderSrc);
     GLuint gridShaderProgram = CreateShaderProgram(gridVertexShaderSrc, gridFragmentShaderSrc);
 
     // ============================================================
@@ -688,8 +613,6 @@ int main(int argc, char* argv[])
         Console::LogError("El framebuffer del viewport no esta completo");
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    glUseProgram(shaderProgram);
 
     // ============================================================
     // CREAR TEXTURA CHECKERBOARD
@@ -728,12 +651,12 @@ int main(int argc, char* argv[])
     GLuint gridVAO, gridVBO;
     std::vector<float> gridVertices;
 
-    int gridSize = 20; 
+    int gridSize = 20;
     float spacing = 1.0f;
 
     for (int i = -gridSize; i <= gridSize; ++i)
     {
-        // Líneas paralelas al eje X
+        // Líneas paralelas al eje Z (x = i)
         gridVertices.push_back((float)i * spacing);
         gridVertices.push_back(0.0f);
         gridVertices.push_back((float)-gridSize * spacing);
@@ -742,7 +665,7 @@ int main(int argc, char* argv[])
         gridVertices.push_back(0.0f);
         gridVertices.push_back((float)gridSize * spacing);
 
-
+        // Líneas paralelas al eje X (z = i)
         gridVertices.push_back((float)-gridSize * spacing);
         gridVertices.push_back(0.0f);
         gridVertices.push_back((float)i * spacing);
@@ -761,27 +684,14 @@ int main(int argc, char* argv[])
     glEnableVertexAttribArray(0);
 
     glBindVertexArray(0);
+
     // ========================================================
-    // ESCENA: sin carga automatica al arrancar.
-    // Los modelos se cargan exclusivamente via drag & drop
-    // (ver SDL_EVENT_DROP_FILE mas abajo).
+    // ESCENA
     // ========================================================
+    // La escena empieza vacia; RebuildOctree recalcula los limites del octree cada vez que se
+    // anade algo (la Baker House inicial, drag & drop o una primitiva).
     std::vector<GameObject> gameObjects;
-
-    // CREAR OCTREE DE LA ESCENA
-    glm::vec3 sceneMin, sceneMax;
-    ComputeSceneAABB(gameObjects, sceneMin, sceneMax);
-
-    // Octree global de escena
-    Octree sceneOctree(sceneMin, sceneMax);
-
-    // Insertar todos los GameObjects
-    for (auto& go : gameObjects)
-    {
-        go.UpdateWorldAABB();          
-        sceneOctree.Insert(&go);
-    }
-
+    Octree sceneOctree(glm::vec3(-1000.0f), glm::vec3(1000.0f));
 
     glUseProgram(shaderProgram);
     glUniform1i(glGetUniformLocation(shaderProgram, "uTexture"), 0);
@@ -795,9 +705,6 @@ int main(int argc, char* argv[])
     GLint normalUProjLoc = glGetUniformLocation(normalShaderProgram, "uProjection");
     GLint normalULengthLoc = glGetUniformLocation(normalShaderProgram, "uNormalLength");
     GLint normalUColorLoc = glGetUniformLocation(normalShaderProgram, "uNormalColor");
-    // ========================================================
-    // MATRICES DE CÁMARA
-    // ========================================================
 
     bool running = true;
     SDL_Event e;
@@ -1060,108 +967,62 @@ int main(int argc, char* argv[])
         {
             float fbxUnitScale = 1.0f;
             std::vector<Mesh> newMeshes = LoadModel(filePath, &fbxUnitScale);
-    
-            size_t currentSize = gameObjects.size();
+
+            const size_t lastSlash = filePath.find_last_of("/\\");
+            const size_t nameStart = (lastSlash == std::string::npos) ? 0 : lastSlash + 1;
+            const size_t lastDot = filePath.find_last_of('.');
+            const std::string baseName = filePath.substr(nameStart,
+                (lastDot == std::string::npos || lastDot < nameStart ? filePath.size() : lastDot) - nameStart);
+            const std::string fbxDir = filePath.substr(0, nameStart);
+
+            // BakerHouse.fbx es inconsistente: sus vertices ya vienen con Y arriba, pero su nodo
+            // lleva ademas una rotacion de -90 en X (pensada para modelos con Z arriba, como el
+            // Hotdog). Al hornearla la casa queda tumbada, con el tejado hacia -Z; +90 en X la
+            // deja derecha. No hay regla general que distinga este caso, asi que se corrige por nombre.
+            std::string lowerBase = baseName;
+            std::transform(lowerBase.begin(), lowerBase.end(), lowerBase.begin(),
+                [](unsigned char c) { return std::tolower(c); });
+            const bool isBakerHouse = (lowerBase == "bakerhouse");
+
+            const size_t currentSize = gameObjects.size();
             for (size_t i = 0; i < newMeshes.size(); ++i)
             {
                 GameObject go;
-         
-                size_t lastSlash = filePath.find_last_of("/\\");
-                size_t lastDot = filePath.find_last_of('.');
-                std::string baseName = filePath.substr(
-                    lastSlash == std::string::npos ? 0 : lastSlash + 1,
-                    (lastDot == std::string::npos ? filePath.size() : lastDot) - (lastSlash + 1)
-                );
-    
                 go.name = baseName + "_" + std::to_string(i + currentSize);
                 go.meshComp.mesh = std::move(newMeshes[i]);
-    
-                glm::vec3 minB, maxB;
-                if (ComputeAABBFromMesh(go.meshComp.mesh, minB, maxB)) {
-                    go.aabbMin = minB;
-                    go.aabbMax = maxB;
-                }
-                else {
-                    go.aabbMin = glm::vec3(0.0f);
-                    go.aabbMax = glm::vec3(0.0f);
-                    Console::LogInfo("Inicial AABB fallback para %s", go.name.c_str());
-                }
-    
-                go.transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
-                go.transform.rotation = glm::vec3(0.0f);
-                // BakerHouse.fbx es inconsistente: sus vertices ya vienen con Y arriba, pero su nodo
-                // lleva ademas una rotacion de -90 en X (pensada para modelos con Z arriba, como el
-                // Hotdog). Al hornearla la casa queda tumbada, con el tejado hacia -Z; +90 en X la
-                // deja derecha. No hay regla general que distinga este caso, asi que se corrige por nombre.
-                std::string lowerBase = baseName;
-                std::transform(lowerBase.begin(), lowerBase.end(), lowerBase.begin(),
-                    [](unsigned char c) { return std::tolower(c); });
-                if (lowerBase == "bakerhouse")
-                    go.transform.rotation.x = 90.0f;
+
+                ComputeAABBFromMesh(go.meshComp.mesh, go.aabbMin, go.aabbMax);
+
+                if (isBakerHouse) go.transform.rotation.x = 90.0f;
                 go.transform.scale = glm::vec3(fbxUnitScale);
-    
-                if (go.meshComp.mesh.textureID != 0)
-                {
-                    go.texComp.textureID = go.meshComp.mesh.textureID;
-                    go.texComp.path = go.meshComp.mesh.texturePath;
-                }
-                else if (!go.meshComp.mesh.texturePath.empty())
-                {
-                    // mesh.texturePath viene de Assimp tal como esta guardado en el
-                    // material del FBX: normalmente solo el nombre de archivo, sin
-                    // directorio. Se recompone contra la carpeta del .fbx soltado
-                    // (filePath), no contra el CWD del proceso.
-                    std::string textureDir = (lastSlash == std::string::npos)
-                        ? std::string()
-                        : filePath.substr(0, lastSlash + 1);
-                    // Algunos FBX guardan la ruta absoluta del PC donde se exportaron (p. ej.
-                // C:\Users\...\textures.jpg), que aqui no existe: solo se usa el nombre del archivo.
+
+                go.texComp.textureID = checkerTexture;
                 const std::string& storedPath = go.meshComp.mesh.texturePath;
-                const size_t nameStart = storedPath.find_last_of("/\\");
-                const std::string textureName = (nameStart == std::string::npos) ? storedPath : storedPath.substr(nameStart + 1);
-                std::string textureFullPath = textureDir + textureName;
-    
-                    int w, h, channels;
-                    unsigned char* img = stbi_load(textureFullPath.c_str(), &w, &h, &channels, 4);
-                    if (img)
+                if (!storedPath.empty())
+                {
+                    // La ruta del material puede ser solo el nombre de archivo o la ruta absoluta del
+                    // PC donde se exporto el FBX (que aqui no existe): se usa solo el nombre del archivo,
+                    // buscado junto al .fbx (no en el directorio de trabajo del proceso).
+                    const size_t texNameStart = storedPath.find_last_of("/\\");
+                    const std::string textureName = (texNameStart == std::string::npos) ? storedPath : storedPath.substr(texNameStart + 1);
+                    const std::string textureFullPath = fbxDir + textureName;
+
+                    if (GLuint tex = LoadImageTexture(textureFullPath))
                     {
-                        GLuint tex;
-                        glGenTextures(1, &tex);
-                        glBindTexture(GL_TEXTURE_2D, tex);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    
-                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
-                        glGenerateMipmap(GL_TEXTURE_2D);
-                        stbi_image_free(img);
-    
                         go.texComp.textureID = tex;
                         go.texComp.path = textureFullPath;
-                        go.meshComp.mesh.textureID = tex;
-                        Console::LogInfo("stb_image: textura cargada %s (%dx%d, %d canales)", textureFullPath.c_str(), w, h, channels);
                     }
                     else
                     {
-                        go.texComp.textureID = checkerTexture;
-                        go.texComp.path.clear();
-                        Console::LogError("stb_image: no se pudo cargar la textura %s (%s); se usa la checker", textureFullPath.c_str(), stbi_failure_reason());
+                        Console::LogError("Se usa la textura checker para %s", go.name.c_str());
                     }
                 }
-                else
-                {
-                    go.texComp.textureID = checkerTexture;
-                    go.texComp.path.clear();
-                }
-    
+
                 gameObjects.push_back(std::move(go));
             }
             RebuildOctree();
             Console::LogInfo("FBX cargado: %s (%zu mallas -> GameObjects)", filePath.c_str(), newMeshes.size());
         };
-
-
 
     // Aplica una textura recien cargada (PNG/JPG/TGA/DDS soltada en la ventana) al objeto
     // seleccionado, o al primero si no hay seleccion. Si no hay objetos, la libera.
@@ -1185,9 +1046,6 @@ int main(int argc, char* argv[])
             Console::LogInfo("Textura aplicada a: %s (path: %s)", go.name.c_str(), filePath.c_str());
         };
 
-    // ========================================================
-    // BUCLE PRINCIPAL
-    // ========================================================
     // Crea un GameObject con una geometria basica (ver Primitives.h), con la textura checker
     // para que se vean las UV, y lo deja seleccionado.
     auto AddPrimitive = [&](const char* name, Mesh mesh)
@@ -1195,13 +1053,7 @@ int main(int argc, char* argv[])
             GameObject go;
             go.name = name;
             go.meshComp.mesh = std::move(mesh);
-
-            glm::vec3 minB, maxB;
-            if (ComputeAABBFromMesh(go.meshComp.mesh, minB, maxB))
-            {
-                go.aabbMin = minB;
-                go.aabbMax = maxB;
-            }
+            ComputeAABBFromMesh(go.meshComp.mesh, go.aabbMin, go.aabbMax);
             go.texComp.textureID = checkerTexture;
 
             gameObjects.push_back(std::move(go));
@@ -1222,6 +1074,9 @@ int main(int argc, char* argv[])
 
     committed = CaptureState();   // estado inicial: el primer cambio apilara este en undo
 
+    // ========================================================
+    // BUCLE PRINCIPAL
+    // ========================================================
     while (running)
     {
         // ========================================================
@@ -1246,12 +1101,12 @@ int main(int argc, char* argv[])
                 {
                     if (selectedObject >= 0 && selectedObject < static_cast<int>(gameObjects.size()))
                     {
-                                                gameObjects[selectedObject].hidden = !gameObjects[selectedObject].hidden;
+                        gameObjects[selectedObject].hidden = !gameObjects[selectedObject].hidden;
 
                         if (gameObjects[selectedObject].hidden)
                         {
                             Console::LogInfo("%s ocultado", gameObjects[selectedObject].name.c_str());
-                            selectedObject = -1; 
+                            selectedObject = -1;
                         }
                         else
                         {
@@ -1297,51 +1152,20 @@ int main(int argc, char* argv[])
                     std::string lower = filePath;
                     std::transform(lower.begin(), lower.end(), lower.begin(),
                         [](unsigned char c) { return std::tolower(c); });
-                    auto ends_with = [](const std::string& str, const std::string& suffix)
-                        {
-                            return str.size() >= suffix.size() &&
-                                str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
-                        };
 
-                    if (ends_with(lower, ".png") || ends_with(lower, ".jpg") ||
-                        ends_with(lower, ".jpeg") || ends_with(lower, ".tga"))
+                    if (lower.ends_with(".png") || lower.ends_with(".jpg") ||
+                        lower.ends_with(".jpeg") || lower.ends_with(".tga"))
                     {
-                        int texWidth, texHeight, texChannels;
-                        // Se fuerza RGBA (4 canales): una imagen de 1 o 2 canales (grises) o de 3 con ancho
-                        // no multiplo de 4 se subiria con un formato/alineacion que no le corresponde.
-                        unsigned char* data = stbi_load(filePath.c_str(), &texWidth, &texHeight, &texChannels, 4);
-                        if (data)
-                        {
-                            GLuint newTex;
-                            glGenTextures(1, &newTex);
-                            glBindTexture(GL_TEXTURE_2D, newTex);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-                            glGenerateMipmap(GL_TEXTURE_2D);
-                            stbi_image_free(data);
-                            Console::LogInfo("stb_image: textura cargada %s (%dx%d, %d canales)", filePath.c_str(), texWidth, texHeight, texChannels);
-
-                            AssignDroppedTexture(newTex, filePath);
-                        }
-                        else
-                        {
-                            Console::LogError("Error cargando imagen: %s (%s)", filePath.c_str(), stbi_failure_reason());
-                        }
+                        if (GLuint newTex = LoadImageTexture(filePath)) AssignDroppedTexture(newTex, filePath);
                     }
-                    else if (ends_with(lower, ".dds"))
+                    else if (lower.ends_with(".dds"))
                     {
-                        const GLuint newTex = LoadDDSTexture(filePath.c_str());
-                        if (newTex != 0) AssignDroppedTexture(newTex, filePath);
+                        if (GLuint newTex = LoadDDSTexture(filePath.c_str())) AssignDroppedTexture(newTex, filePath);
                     }
-                    else if (ends_with(lower, ".fbx"))
+                    else if (lower.ends_with(".fbx"))
                     {
                         LoadFbxIntoScene(filePath);
                     }
-
                     else
                     {
                         Console::LogError("Archivo no soportado: %s", filePath.c_str());
@@ -1404,10 +1228,10 @@ int main(int argc, char* argv[])
 
             if (ImGui::BeginMenu("Help"))
             {
-                if (ImGui::MenuItem("Documentation")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/docs");
+                if (ImGui::MenuItem("Documentation")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert#readme");
                 if (ImGui::MenuItem("Report Bug")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/issues");
                 if (ImGui::MenuItem("Download Latest")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/releases");
-                if (ImGui::MenuItem("About", nullptr, &showAbout)) {}
+                ImGui::MenuItem("About", nullptr, &showAbout);
                 ImGui::EndMenu();
             }
 
@@ -1538,8 +1362,6 @@ int main(int argc, char* argv[])
         view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
         glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-
-
         glViewport(0, 0, viewportWidth, viewportHeight);
         glClearColor(g_clearColor.x, g_clearColor.y, g_clearColor.z, g_clearColor.w);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1576,7 +1398,7 @@ int main(int argc, char* argv[])
         {
             first_time = false;
 
-            ImGui::DockBuilderRemoveNode(dockspace_id); 
+            ImGui::DockBuilderRemoveNode(dockspace_id);
             ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
             ImGui::DockBuilderSetNodeSize(dockspace_id, viewport->Size);
 
@@ -1596,7 +1418,7 @@ int main(int argc, char* argv[])
 
         ImGui::End();
 
-        // -------------------- INSPECTOR (MEJORADO: COMPONENTS) --------------------
+        // -------------------- INSPECTOR --------------------
         if (showInspector)
         {
             ImGui::Begin("Inspector");
@@ -1673,12 +1495,8 @@ int main(int argc, char* argv[])
                     ImGui::Text("Indices: %u", mesh.indexCount);
                     ImGui::Text("VAO: %u", mesh.VAO);
                     ImGui::Text("TexturePath: %s", mesh.texturePath.empty() ? "<none>" : mesh.texturePath.c_str());
- 
-                    static const char* normalsModes[] = {
-                         "Use Global",
-                         "Force On",
-                         "Force Off"
-                    };
+
+                    static const char* normalsModes[] = { "Use Global", "Force On", "Force Off" };
                     int mode = static_cast<int>(go.normalsMode);
                     if (ImGui::Combo("Normals Mode", &mode, normalsModes, IM_ARRAYSIZE(normalsModes)))
                     {
@@ -1693,23 +1511,6 @@ int main(int argc, char* argv[])
 
                     ImGui::Checkbox("Mostrar normales por cara (mesh)", &go.showFaceNormals);
                     ImGui::TextDisabled("Global Normals: %s | Face Normals: %s", showNormals ? "ON" : "OFF", showFaceNormals ? "ON" : "OFF");
-
-                    if (ImGui::Button("Recalcular AABB")) {
-                      
-                        glm::vec3 minB, maxB;
-                        if (ComputeAABBFromMesh(mesh, minB, maxB))
-                        {
-                            go.aabbMin = minB;
-                            go.aabbMax = maxB;
-                            Console::LogInfo("AABB recalculada para %s", go.name.c_str());
-                        }
-                        else
-                        {
-                            Console::LogInfo("Recalculo AABB fallido para %s (mesh datos insuficientes)", go.name.c_str());
-                        }
-                        RebuildOctree();
-
-                    }
                 }
 
                 ImGui::Separator();
@@ -1755,7 +1556,6 @@ int main(int argc, char* argv[])
 
                     if (ImGui::Button("Assign CheckerTexture"))
                     {
-                        extern GLuint checkerTexture; 
                         const GLuint oldTex = go.texComp.textureID;
                         go.texComp.textureID = checkerTexture;
                         go.texComp.path.clear();
@@ -1785,7 +1585,6 @@ int main(int argc, char* argv[])
 
                 ImGui::Text("CPU Cores: %d", SDL_GetNumLogicalCPUCores());
                 ImGui::Text("CPU Cacheline: %d bytes", SDL_GetCPUCacheLineSize());
-                ImGui::Text("Has RDTSC: N/A (SDL3 build without CPU feature API)");
                 ImGui::Text("System RAM: %d MB", SDL_GetSystemRAM());
 
                 // OpenGL / GPU
@@ -1799,13 +1598,7 @@ int main(int argc, char* argv[])
                 ImGui::Text("OpenGL Version: %s", glVersion ? (const char*)glVersion : "unknown");
                 ImGui::Text("GLSL Version: %s", glslVersion ? (const char*)glslVersion : "unknown");
 
-                // Assimp version
-                // aiGetVersion* son funciones (assimp/version.h), no macros: los #ifdef anteriores
-                // sobre ellas nunca se cumplian y se mostraba "version unknown".
                 ImGui::Text("Assimp: %u.%u.%u", aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision());
-
-                ImGui::Separator();
-                ImGui::Text("GLAD reported vendor/renderer via glGetString.");
             }
 
             // --- Viewport / Window config ---
@@ -1835,7 +1628,6 @@ int main(int argc, char* argv[])
                 ImGui::Text("Culling");
 
                 ImGui::Checkbox("Enable Frustum Culling", &g_enableFrustumCulling);
-
             }
 
             // --- Input / camara ---
@@ -1919,12 +1711,12 @@ int main(int argc, char* argv[])
 
                 ImGui::Text("FPS (avg): %.1f", fps);
                 ImGui::Text("Frame ms (avg): %.3f", avg);
-                static std::vector<float> tmpBuf;
-                tmpBuf.assign(g_frameTimes.begin(), g_frameTimes.end());
-                if (tmpBuf.empty()) tmpBuf.assign(PERF_HISTORY, 0.0f);
+                // PlotLines necesita memoria contigua y un deque no lo es: se copia a un vector.
+                static std::vector<float> plotBuf;
+                plotBuf.assign(g_frameTimes.begin(), g_frameTimes.end());
 
-                ImGui::PlotLines("Frame ms", tmpBuf.data(), (int)tmpBuf.size(), 0, nullptr, 0.0f, 50.0f, ImVec2(0, 80));
-                ImGui::Text("Last frame time: %.3f ms", tmpBuf.empty() ? 0.0f : tmpBuf.back());
+                ImGui::PlotLines("Frame ms", plotBuf.data(), (int)plotBuf.size(), 0, nullptr, 0.0f, 50.0f, ImVec2(0, 80));
+                ImGui::Text("Last frame time: %.3f ms", plotBuf.empty() ? 0.0f : plotBuf.back());
             }
 
             ImGui::End();
@@ -1937,8 +1729,6 @@ int main(int argc, char* argv[])
         glDrawArrays(GL_LINES, 0, (GLsizei)(gridVertices.size() / 3));
         glBindVertexArray(0);
 
-        sceneOctree.DebugDraw();
-
         // === DIBUJAR MODELOS ===
         glUseProgram(shaderProgram);
         glUniformMatrix4fv(uViewLoc, 1, GL_FALSE, glm::value_ptr(view));
@@ -1946,13 +1736,12 @@ int main(int argc, char* argv[])
 
         glm::mat4 vp = projection * view;
         Frustum frustum = ExtractFrustum(vp);
-       
-        glm::vec3 frustumMin(-1000.0f);
-        glm::vec3 frustumMax(1000.0f);
 
+        // El octree se consulta con una caja fija que cubre toda la escena; el culling real es
+        // el test del AABB de cada objeto contra el frustum.
         std::vector<GameObject*> visibleObjects;
-        sceneOctree.Query(frustumMin, frustumMax, visibleObjects);
-        
+        sceneOctree.Query(glm::vec3(-1000.0f), glm::vec3(1000.0f), visibleObjects);
+
         int drawnCount = 0;
 
         for (GameObject* goPtr : visibleObjects)
@@ -1966,16 +1755,8 @@ int main(int argc, char* argv[])
                     continue;
             }
 
-
-            if (go.texComp.textureID != 0)
-            {
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, go.texComp.textureID);
-            }
-            else
-            {
-                glBindTexture(GL_TEXTURE_2D, checkerTexture);
-            }
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, go.texComp.textureID != 0 ? go.texComp.textureID : checkerTexture);
 
             go.Draw(uModelLoc);
             drawnCount++;
@@ -2016,7 +1797,6 @@ int main(int argc, char* argv[])
         // -------------------- Hierarchy panel (drag/rename/dup/delete) --------------------
         ImGui::Begin("Hierarchy");
 
-        static int drag_source_idx = -1;
         static int rename_target_idx = -1;
         static char renameBuf[128] = { 0 };
 
@@ -2074,11 +1854,10 @@ int main(int argc, char* argv[])
                 ImGui::EndPopup();
             }
 
-            // Drag source
+            // Arrastrar un objeto sobre otro lo mueve a esa posicion de la lista.
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
             {
-                drag_source_idx = i; 
-                ImGui::SetDragDropPayload("DND_GAMEOBJECT", &drag_source_idx, sizeof(int));
+                ImGui::SetDragDropPayload("DND_GAMEOBJECT", &i, sizeof(int));   // ImGui copia el payload
                 ImGui::Text("%s", gameObjects[i].name.c_str());
                 ImGui::EndDragDropSource();
             }
@@ -2092,18 +1871,11 @@ int main(int argc, char* argv[])
                     if (src != dst && src >= 0 && src < (int)gameObjects.size())
                     {
                         GameObject tmp = std::move(gameObjects[src]);
-                        if (src < dst) {
-                            gameObjects.erase(gameObjects.begin() + src);
-                            gameObjects.insert(gameObjects.begin() + dst, std::move(tmp));
-                            if (selectedObject == src) selectedObject = dst;
-                            else if (selectedObject > src && selectedObject <= dst) selectedObject--;
-                        }
-                        else {
-                            gameObjects.erase(gameObjects.begin() + src);
-                            gameObjects.insert(gameObjects.begin() + dst, std::move(tmp));
-                            if (selectedObject == src) selectedObject = dst;
-                            else if (selectedObject >= dst && selectedObject < src) selectedObject++;
-                        }
+                        gameObjects.erase(gameObjects.begin() + src);
+                        gameObjects.insert(gameObjects.begin() + dst, std::move(tmp));
+                        if (selectedObject == src) selectedObject = dst;
+                        else if (src < dst && selectedObject > src && selectedObject <= dst) selectedObject--;
+                        else if (src > dst && selectedObject >= dst && selectedObject < src) selectedObject++;
                         sceneStructureDirty = true;
                         Console::LogInfo("Reordered: %d -> %d", src, dst);
                     }
@@ -2115,18 +1887,17 @@ int main(int argc, char* argv[])
             ImGui::PopID();
         }
 
+        // Ctrl+Z / Ctrl+Y (o Ctrl+Shift+Z). Va antes de reconstruir el octree porque deshacer
+        // sustituye la escena entera.
+        if (io.KeyCtrl && !io.WantTextInput)
+        {
+            if (ImGui::IsKeyPressed(ImGuiKey_Z)) { if (io.KeyShift) wantRedo = true; else wantUndo = true; }
+            else if (ImGui::IsKeyPressed(ImGuiKey_Y)) wantRedo = true;
+        }
+        UpdateUndoHistory();
+
         // Reconstruir el octree justo aqui (y no al final del frame): el panel Viewport, mas
         // abajo, hace picking consultando el octree en este mismo frame.
-        {
-            const ImGuiIO& uio = ImGui::GetIO();
-            if (uio.KeyCtrl && !uio.WantTextInput)
-            {
-                if (ImGui::IsKeyPressed(ImGuiKey_Z)) { if (uio.KeyShift) wantRedo = true; else wantUndo = true; }
-                else if (ImGui::IsKeyPressed(ImGuiKey_Y)) wantRedo = true;
-            }
-            UpdateUndoHistory();
-        }
-
         if (sceneStructureDirty)
         {
             RebuildOctree();
@@ -2162,7 +1933,6 @@ int main(int argc, char* argv[])
         }
 
         ImGui::End();
-
 
         ImGui::Begin("Viewport");
         ImGui::TextColored(
@@ -2205,7 +1975,7 @@ int main(int argc, char* argv[])
         }
 
         // ========================================================
-        // CONTROL DE SELECCIÓN DE OBJETOS (RAYCAST) - VERSIÓN REVERT
+        // SELECCIÓN DE OBJETOS (RAYCAST CONTRA LOS AABB)
         // ========================================================
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !altHeld && mouseInsideViewport && !ImGui::IsAnyItemHovered())
         {
@@ -2223,16 +1993,10 @@ int main(int argc, char* argv[])
             float closestDistance = std::numeric_limits<float>::max();
             int hitIndex = -1;
 
-            glm::vec3 rayMin = rayOrigin + rayDir * 0.0f;
-            glm::vec3 rayMax = rayOrigin + rayDir * 10000.0f;
-
-            glm::vec3 rayAABBMin = glm::min(rayMin, rayMax);
-            glm::vec3 rayAABBMax = glm::max(rayMin, rayMax);
-
+            // Candidatos: los objetos de las hojas del octree que toca la caja que envuelve el rayo.
+            const glm::vec3 rayEnd = rayOrigin + rayDir * 10000.0f;
             std::vector<GameObject*> candidates;
-            sceneOctree.Query(rayAABBMin, rayAABBMax, candidates);
-
-            Console::LogInfo("Octree candidates: %zu", candidates.size());
+            sceneOctree.Query(glm::min(rayOrigin, rayEnd), glm::max(rayOrigin, rayEnd), candidates);
 
             for (GameObject* goPtr : candidates)
             {
@@ -2258,18 +2022,13 @@ int main(int argc, char* argv[])
                 if (!RayIntersectsAABB(rayOrigin, rayDir, pickMin, pickMax, tHit))
                     continue;
 
-
-                glm::vec3 pointWorld = rayOrigin + rayDir * tHit;
-
-                float worldDist = glm::length(pointWorld - rayOrigin);
-
-                if (worldDist > 0.0f && worldDist < closestDistance)
+                // rayDir esta normalizado, asi que tHit ya es la distancia en unidades de mundo.
+                if (tHit > 0.0f && tHit < closestDistance)
                 {
-                    closestDistance = worldDist;
+                    closestDistance = tHit;
                     hitIndex = i;
                 }
-
-            } 
+            }
 
             if (hitIndex != -1)
             {
@@ -2289,8 +2048,6 @@ int main(int argc, char* argv[])
         // ============================================================
         // RENDERIZAR IMGUI (UNA VEZ POR FRAME)
         // ============================================================
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -2321,29 +2078,33 @@ int main(int argc, char* argv[])
                 g_frameTimes.back() = deltaMs;
             }
         }
-        SDL_GL_SwapWindow(window);       
+        SDL_GL_SwapWindow(window);
     }
-        // ========================================================
-        // LIMPIEZA
-        // ========================================================
-        Console::LogInfo("Saliendo del bucle principal");
 
-        for (auto& go : gameObjects) go.Destroy();
-        gameObjects.clear();
+    // ========================================================
+    // LIMPIEZA
+    // ========================================================
+    Console::LogInfo("Saliendo del bucle principal");
 
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplSDL3_Shutdown();
-        ImGui::DestroyContext();
+    for (auto& go : gameObjects) go.Destroy();
+    gameObjects.clear();
 
-        glDeleteProgram(shaderProgram);
-        glDeleteProgram(normalShaderProgram);
-        glDeleteTextures(1, &checkerTexture);
-        glDeleteFramebuffers(1, &viewportFBO);
-        glDeleteTextures(1, &viewportTexture);
-        glDeleteRenderbuffers(1, &viewportRBO);
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
 
-        SDL_GL_DestroyContext(context);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 0;
-    }
+    glDeleteProgram(shaderProgram);
+    glDeleteProgram(normalShaderProgram);
+    glDeleteProgram(gridShaderProgram);
+    glDeleteVertexArrays(1, &gridVAO);
+    glDeleteBuffers(1, &gridVBO);
+    glDeleteTextures(1, &checkerTexture);
+    glDeleteFramebuffers(1, &viewportFBO);
+    glDeleteTextures(1, &viewportTexture);
+    glDeleteRenderbuffers(1, &viewportRBO);
+
+    SDL_GL_DestroyContext(context);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    return 0;
+}

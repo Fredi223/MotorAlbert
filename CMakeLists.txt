@@ -41,6 +41,10 @@ target_include_directories(MotorAlbert PRIVATE
     src/vendor/glad/include
 )
 
+# Las extensiones gtx de GLM (yawPitchRoll en Transform.h) exigen esta macro antes de incluirlas;
+# definirla aqui evita depender del orden de los #include.
+target_compile_definitions(MotorAlbert PRIVATE GLM_ENABLE_EXPERIMENTAL)
+
 target_link_libraries(MotorAlbert PRIVATE
     SDL3::SDL3
     OpenGL::GL

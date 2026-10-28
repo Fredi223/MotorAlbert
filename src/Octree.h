@@ -30,8 +30,6 @@ public:
     void Query(const glm::vec3& qMin, const glm::vec3& qMax,
         std::vector<GameObject*>& results) const;
 
-    void DebugDraw() const;
-
 private:
     OctreeNode* root = nullptr;
 
@@ -43,6 +41,4 @@ private:
 
     bool Intersects(const glm::vec3& aMin, const glm::vec3& aMax,
         const glm::vec3& bMin, const glm::vec3& bMax) const;
-
-    void DebugDrawNode(const OctreeNode* node) const;
 };

@@ -1,7 +1,9 @@
 #include "Logger.h"
 #include <cstdarg>
 #include <cstdio>
-#include <sstream>
+#include <mutex>
+#include <string>
+#include <vector>
 #include <imgui.h>
 
 namespace Console

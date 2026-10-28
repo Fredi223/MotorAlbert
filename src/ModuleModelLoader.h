@@ -8,8 +8,7 @@ struct Mesh {
     GLuint VAO = 0;
     GLuint VBO = 0;
     GLuint EBO = 0;
-    GLuint textureID = 0;
-    std::string texturePath;
+    std::string texturePath;   // ruta de la textura difusa tal como la guarda el material del FBX
     unsigned int indexCount = 0;
     unsigned int vertexCount = 0;
     std::vector<float> vertices;
@@ -25,8 +24,9 @@ struct Mesh {
     void Draw() const;
     void DrawNormals() const;
     void DrawFaceNormals() const;
-    void Destroy();     
+    void Destroy();
 };
+
 // outUnitScale (opcional): factor de conversion a metros deducido del
 // UnitScaleFactor de los metadatos de Assimp (fallback 0.01 si el FBX
 // no trae esa metadata, asumiendo centimetros).

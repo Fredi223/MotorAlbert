@@ -1,17 +1,13 @@
 #pragma once
-#define GLM_ENABLE_EXPERIMENTAL
-
-#include <string>
-#include <glad/glad.h>               
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <glm/gtx/euler_angles.hpp>
 
 #include <cfloat>
+#include <string>
+#include <glad/glad.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "Transform.h"
 #include "ModuleModelLoader.h"
-
 
 struct TextureComponent {
     GLuint textureID = 0;
@@ -71,7 +67,7 @@ struct GameObject
     bool showFaceNormals = false;   // normales por cara (triangulo) de este objeto
 
     std::string name;
-    Transform transform;     
+    Transform transform;
     MeshComponent meshComp;
     TextureComponent texComp;
 
@@ -84,12 +80,13 @@ struct GameObject
         meshComp.mesh.Draw();
     }
 
+    // La textura NO se borra aqui: varios GameObject pueden compartir el mismo GLuint (p. ej. un
+    // duplicado) y borrarla dejaria a los demas con un handle invalido. La libera quien sabe quien
+    // la usa (ReleaseTextureIfUnused en main.cpp).
     void Destroy()
     {
         meshComp.mesh.Destroy();
         texComp.textureID = 0;
     }
 };
-
-
 

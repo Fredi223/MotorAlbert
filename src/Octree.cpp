@@ -1,7 +1,7 @@
 #include "Octree.h"
 #include "GameObject.h"
-#include <glad/glad.h>
 #include <algorithm>
+#include <functional>
 
 // ------------------------------------------------------------
 
@@ -137,30 +137,4 @@ bool Octree::Intersects(const glm::vec3& aMin, const glm::vec3& aMax,
     return (aMin.x <= bMax.x && aMax.x >= bMin.x) &&
         (aMin.y <= bMax.y && aMax.y >= bMin.y) &&
         (aMin.z <= bMax.z && aMax.z >= bMin.z);
-}
-
-// ------------------------------------------------------------
-
-void Octree::DebugDraw() const
-{
-    DebugDrawNode(root);
-}
-
-void Octree::DebugDrawNode(const OctreeNode* node) const
-{
-    if (!node) return;
-
-    // TODO: reescribir con VAO/VBO + shader, immediate mode no soportado en Core Profile
-    // glBegin(GL_LINE_LOOP);
-    // glVertex3f(node->min.x, node->min.y, node->min.z);
-    // glVertex3f(node->max.x, node->min.y, node->min.z);
-    // glVertex3f(node->max.x, node->max.y, node->min.z);
-    // glVertex3f(node->min.x, node->max.y, node->min.z);
-    // glEnd();
-
-    if (!node->IsLeaf())
-    {
-        for (int i = 0; i < 8; ++i)
-            DebugDrawNode(node->children[i]);
-    }
 }

@@ -2,18 +2,13 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
-#include <iostream>
-#include <cstring>
-#include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <utility>
 #include <algorithm>
 #include <cfloat>
-#include "stb_image.h"
+#include <glm/glm.hpp>
 
-#include "Logger.h" 
+#include "Logger.h"
 
-glm::mat4 AiToGlm(const aiMatrix4x4& m)
+static glm::mat4 AiToGlm(const aiMatrix4x4& m)
 {
     return glm::mat4(
         m.a1, m.b1, m.c1, m.d1,
@@ -42,7 +37,7 @@ void Mesh::SetupMesh()
     // Formato: pos(3) normal(3) tex(2) color(3) = 11 * sizeof(float)
     GLsizei stride = 11 * sizeof(float);
 
-    // posici�n
+    // posicion
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, stride, (void*)(0));
     glEnableVertexAttribArray(0);
 
@@ -57,7 +52,7 @@ void Mesh::SetupMesh()
     // color
     glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, stride, (void*)(8 * sizeof(float)));
     glEnableVertexAttribArray(3);
-    
+
     glBindVertexArray(0);
 
     indexCount = static_cast<unsigned int>(indices.size());
@@ -133,7 +128,6 @@ void Mesh::DrawFaceNormals() const
     glBindVertexArray(0);
 }
 
-
 void Mesh::Destroy()
 {
     if (EBO) { glDeleteBuffers(1, &EBO); EBO = 0; }
@@ -142,10 +136,6 @@ void Mesh::Destroy()
     if (faceNormalVBO) { glDeleteBuffers(1, &faceNormalVBO); faceNormalVBO = 0; }
     if (faceNormalVAO) { glDeleteVertexArrays(1, &faceNormalVAO); faceNormalVAO = 0; }
     faceNormalCount = 0;
-    // La textura NO se borra aqui: varios GameObject pueden compartir el mismo GLuint
-    // (p. ej. un duplicado) y borrarla dejaria a los demas con un handle invalido.
-    // La liberacion la decide quien sabe quien la usa (ver EraseGameObjectAt en main.cpp).
-    textureID = 0;
 
     vertices.clear();
     indices.clear();
@@ -155,26 +145,21 @@ static void ProcessAIMesh(
     const aiMesh* ai_mesh,
     const aiScene* scene,
     const aiNode* node,
-    const std::string& modelPath,
     std::vector<Mesh>& outMeshes)
 {
     Mesh mesh;
 
-    // Transformaci�n del nodo (CLAVE)
     glm::mat4 nodeTransform = AiToGlm(node->mTransformation);
 
     // --- Material / textura ---
-    if (ai_mesh->mMaterialIndex >= 0)
+    const aiMaterial* material = scene->mMaterials[ai_mesh->mMaterialIndex];
+    aiString path;
+    if (AI_SUCCESS == material->GetTexture(aiTextureType_DIFFUSE, 0, &path))
     {
-        aiMaterial* material = scene->mMaterials[ai_mesh->mMaterialIndex];
-        aiString path;
-        if (AI_SUCCESS == material->GetTexture(aiTextureType_DIFFUSE, 0, &path))
-        {
-            mesh.texturePath = path.C_Str();
-        }
+        mesh.texturePath = path.C_Str();
     }
 
-    // --- V�rtices ---
+    // --- Vertices ---
     mesh.vertices.reserve(ai_mesh->mNumVertices * 11);
 
     // Si la malla no trae UV (p. ej. los exports de Unity sin mapeado), se generan por proyeccion
@@ -198,7 +183,7 @@ static void ProcessAIMesh(
 
     for (unsigned int v = 0; v < ai_mesh->mNumVertices; ++v)
     {
-        // POSICI�N (con transformaci�n aplicada)
+        // POSICION (con la transformacion del nodo aplicada)
         glm::vec4 p = nodeTransform * glm::vec4(
             ai_mesh->mVertices[v].x,
             ai_mesh->mVertices[v].y,
@@ -226,9 +211,9 @@ static void ProcessAIMesh(
         if (ai_mesh->mTextureCoords[0])
         {
             mesh.vertices.push_back(ai_mesh->mTextureCoords[0][v].x);
-            // La V de FBX ya tiene el origen abajo, como OpenGL; la imagen se voltea al cargarla
-            // (stbi_set_flip_vertically_on_load). Antes aqui se invertia otra vez para compensar el
-            // flip que aiProcess_ConvertToLeftHanded hacia por dentro; sin ese flag sobra.
+            // La V de FBX ya tiene el origen abajo, como OpenGL, y la imagen se voltea al cargarla
+            // (stbi_set_flip_vertically_on_load): no hay que invertirla aqui. Solo haria falta con
+            // aiProcess_ConvertToLeftHanded, que no se usa (el motor es de mano derecha).
             mesh.vertices.push_back(ai_mesh->mTextureCoords[0][v].y);
         }
         else
@@ -248,7 +233,7 @@ static void ProcessAIMesh(
         mesh.vertices.insert(mesh.vertices.end(), { 1.f, 1.f, 1.f });
     }
 
-    // --- �ndices ---
+    // --- Indices ---
     for (unsigned int f = 0; f < ai_mesh->mNumFaces; ++f)
     {
         const aiFace& face = ai_mesh->mFaces[f];
@@ -279,9 +264,6 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
         aiProcess_OptimizeMeshes |
         aiProcess_PreTransformVertices
     );
-
-
-
 
     if (!scene) {
         Console::LogError("Assimp error: %s", importer.GetErrorString());
@@ -315,15 +297,7 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
     Console::LogInfo("Assimp: %u mallas, %u materiales", scene->mNumMeshes, scene->mNumMaterials);
     outMeshes.reserve(scene->mNumMeshes);
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
-        ProcessAIMesh(
-            scene->mMeshes[i],
-            scene,
-            scene->mRootNode,
-            path,
-            outMeshes
-        );
-
-
+        ProcessAIMesh(scene->mMeshes[i], scene, scene->mRootNode, outMeshes);
     }
     return outMeshes;
 }
