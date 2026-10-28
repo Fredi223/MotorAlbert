@@ -21,6 +21,7 @@
 #include "GameObject.h"
 #include "Primitives.h"
 #include "SystemInfo.h"
+#include "DdsLoader.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -1162,6 +1163,28 @@ int main(int argc, char* argv[])
 
 
 
+    // Aplica una textura recien cargada (PNG/JPG/TGA/DDS soltada en la ventana) al objeto
+    // seleccionado, o al primero si no hay seleccion. Si no hay objetos, la libera.
+    auto AssignDroppedTexture = [&](GLuint newTex, const std::string& filePath)
+        {
+            int target = -1;
+            if (selectedObject >= 0 && selectedObject < (int)gameObjects.size()) target = selectedObject;
+            else if (!gameObjects.empty()) target = 0;
+
+            if (target < 0)
+            {
+                glDeleteTextures(1, &newTex);   // nadie la va a usar
+                Console::LogInfo("No hay GameObjects para aplicar la textura");
+                return;
+            }
+            GameObject& go = gameObjects[target];
+            const GLuint oldTex = go.texComp.textureID;
+            go.texComp.textureID = newTex;
+            go.texComp.path = filePath;
+            ReleaseTextureIfUnused(oldTex);
+            Console::LogInfo("Textura aplicada a: %s (path: %s)", go.name.c_str(), filePath.c_str());
+        };
+
     // ========================================================
     // BUCLE PRINCIPAL
     // ========================================================
@@ -1302,33 +1325,17 @@ int main(int argc, char* argv[])
                             stbi_image_free(data);
                             Console::LogInfo("stb_image: textura cargada %s (%dx%d, %d canales)", filePath.c_str(), texWidth, texHeight, texChannels);
 
-                            if (selectedObject >= 0&& selectedObject < (int)gameObjects.size())
-                            {
-                                const GLuint oldTex = gameObjects[selectedObject].texComp.textureID;
-                                gameObjects[selectedObject].texComp.textureID = newTex;
-                                gameObjects[selectedObject].texComp.path = filePath;
-                                ReleaseTextureIfUnused(oldTex);
-                                Console::LogInfo("Textura aplicada a: %s (path: %s)", gameObjects[selectedObject].name.c_str(), filePath.c_str());
-                            }
-                            else if (!gameObjects.empty())
-                            {
-                                const GLuint oldTex = gameObjects[0].texComp.textureID;
-                                gameObjects[0].texComp.textureID = newTex;
-                                gameObjects[0].texComp.path = filePath;
-                                ReleaseTextureIfUnused(oldTex);
-                                Console::LogInfo("Textura aplicada al primer objeto: %s (path: %s)", gameObjects[0].name.c_str(), filePath.c_str());
-                            }
-
-                            else
-                            {
-                                glDeleteTextures(1, &newTex);   // nadie la va a usar
-                                Console::LogInfo("No hay GameObjects para aplicar la textura");
-                            }
+                            AssignDroppedTexture(newTex, filePath);
                         }
                         else
                         {
                             Console::LogError("Error cargando imagen: %s (%s)", filePath.c_str(), stbi_failure_reason());
                         }
+                    }
+                    else if (ends_with(lower, ".dds"))
+                    {
+                        const GLuint newTex = LoadDDSTexture(filePath.c_str());
+                        if (newTex != 0) AssignDroppedTexture(newTex, filePath);
                     }
                     else if (ends_with(lower, ".fbx"))
                     {

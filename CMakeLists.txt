@@ -25,6 +25,8 @@ add_executable(MotorAlbert
     src/Primitives.cpp
     src/Primitives.h
     src/SystemInfo.cpp
+    src/DdsLoader.cpp
+    src/DdsLoader.h
     src/SystemInfo.h
     src/GameObject.h
     src/Transform.h
