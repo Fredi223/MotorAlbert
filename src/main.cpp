@@ -875,6 +875,16 @@ int main(int argc, char* argv[])
     // marcar este flag; el bucle principal reconstruye el octree antes de volver a usarlo.
     bool sceneStructureDirty = false;
 
+    // Una textura puede estar compartida entre varios objetos (duplicados): solo se libera
+    // cuando ningun GameObject la usa ya, y nunca la checker, que es global. Hay que llamarla
+    // DESPUES de haber quitado la textura del objeto que la dejaba, o ese objeto la seguiria contando.
+    auto ReleaseTextureIfUnused = [&](GLuint tex) {
+        if (tex == 0 || tex == checkerTexture) return;
+        const bool inUse = std::any_of(gameObjects.begin(), gameObjects.end(),
+            [tex](const GameObject& o) { return o.texComp.textureID == tex; });
+        if (!inUse) glDeleteTextures(1, &tex);
+        };
+
     auto DuplicateGameObject = [&](std::vector<GameObject>& list, int index) -> int {
         if (index < 0 || index >= (int)list.size()) return -1;
         GameObject copy = list[index];
@@ -895,14 +905,7 @@ int main(int argc, char* argv[])
         list[index].Destroy();
         list.erase(list.begin() + index);
         sceneStructureDirty = true;
-
-        // La textura puede estar compartida con un duplicado: solo se borra si ya no la usa
-        // ningun otro objeto (y nunca la checker, que es global).
-        if (tex != 0 && tex != checkerTexture &&
-            std::none_of(list.begin(), list.end(), [tex](const GameObject& o) { return o.texComp.textureID == tex; }))
-        {
-            glDeleteTextures(1, &tex);
-        }
+        ReleaseTextureIfUnused(tex);
         if (selected == index) {
             selected = -1;
         }
@@ -1053,19 +1056,24 @@ int main(int argc, char* argv[])
 
                             if (selectedObject >= 0 && selectedObject < (int)gameObjects.size())
                             {
+                                const GLuint oldTex = gameObjects[selectedObject].texComp.textureID;
                                 gameObjects[selectedObject].texComp.textureID = newTex;
                                 gameObjects[selectedObject].texComp.path = filePath;
+                                ReleaseTextureIfUnused(oldTex);
                                 Console::LogInfo("Textura aplicada a: %s (path: %s)", gameObjects[selectedObject].name.c_str(), filePath.c_str());
                             }
                             else if (!gameObjects.empty())
                             {
+                                const GLuint oldTex = gameObjects[0].texComp.textureID;
                                 gameObjects[0].texComp.textureID = newTex;
                                 gameObjects[0].texComp.path = filePath;
+                                ReleaseTextureIfUnused(oldTex);
                                 Console::LogInfo("Textura aplicada al primer objeto: %s (path: %s)", gameObjects[0].name.c_str(), filePath.c_str());
                             }
 
                             else
                             {
+                                glDeleteTextures(1, &newTex);   // nadie la va a usar
                                 std::cout << "No hay GameObjects para aplicar la textura." << std::endl;
                             }
                         }
@@ -1523,8 +1531,10 @@ int main(int argc, char* argv[])
                         ImGui::Image((ImTextureID)(intptr_t)go.texComp.textureID, ImVec2(128, 128), ImVec2(0, 1), ImVec2(1, 0));
                         if (ImGui::Button("Remove Texture"))
                         {
+                            const GLuint oldTex = go.texComp.textureID;
                             go.texComp.textureID = 0;
                             go.texComp.path.clear();
+                            ReleaseTextureIfUnused(oldTex);
                             Console::LogInfo("Texture removed from %s", go.name.c_str());
                         }
                         ImGui::SameLine();
@@ -1543,8 +1553,10 @@ int main(int argc, char* argv[])
                     if (ImGui::Button("Assign CheckerTexture"))
                     {
                         extern GLuint checkerTexture; 
+                        const GLuint oldTex = go.texComp.textureID;
                         go.texComp.textureID = checkerTexture;
                         go.texComp.path.clear();
+                        ReleaseTextureIfUnused(oldTex);
                         Console::LogInfo("Checker texture asignada a %s", go.name.c_str());
                     }
                 }
