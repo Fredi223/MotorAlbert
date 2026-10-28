@@ -966,7 +966,7 @@ int main(int argc, char* argv[])
                 if (sc == SDL_SCANCODE_ESCAPE) {
                     running = false;
                 }
-                else if (sc == SDL_SCANCODE_H)
+                else if (sc == SDL_SCANCODE_H && !io.WantTextInput)
                 {
                     if (selectedObject >= 0 && selectedObject < static_cast<int>(gameObjects.size()))
                     {
@@ -990,7 +990,7 @@ int main(int argc, char* argv[])
                             << " (size=" << gameObjects.size() << ")" << std::endl;
                     }
                 }
-                else if (sc == SDL_SCANCODE_N)
+                else if (sc == SDL_SCANCODE_N && !io.WantTextInput)
                 {
                     Uint32 now = SDL_GetTicks();
                     if (now - lastNormalsToggleMs > NORMALS_TOGGLE_DEBOUNCE) {
