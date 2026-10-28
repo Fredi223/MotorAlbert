@@ -45,9 +45,12 @@ target_link_libraries(MotorAlbert PRIVATE
     imgui::imgui
 )
 
-# Resources/ se copia junto al ejecutable en cada compilacion: el motor la busca ahi
-# (SDL_GetBasePath), tanto en build/ como en la carpeta de entrega.
-add_custom_command(TARGET MotorAlbert POST_BUILD
+# Resources/ se copia junto al ejecutable: el motor la busca ahi (SDL_GetBasePath), tanto en
+# build/ como en la carpeta de entrega. Es un target propio (y no un POST_BUILD del ejecutable)
+# para que se copie tambien cuando solo cambian los recursos y el .exe no se vuelve a enlazar.
+add_custom_target(CopyResources ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/Resources $<TARGET_FILE_DIR:MotorAlbert>/Resources
+    COMMENT "Copiando Resources junto al ejecutable"
 )
+add_dependencies(CopyResources MotorAlbert)
