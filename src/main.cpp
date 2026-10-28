@@ -977,6 +977,15 @@ int main(int argc, char* argv[])
     
                 go.transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
                 go.transform.rotation = glm::vec3(0.0f);
+                // BakerHouse.fbx es inconsistente: sus vertices ya vienen con Y arriba, pero su nodo
+                // lleva ademas una rotacion de -90 en X (pensada para modelos con Z arriba, como el
+                // Hotdog). Al hornearla la casa queda tumbada, con el tejado hacia -Z; +90 en X la
+                // deja derecha. No hay regla general que distinga este caso, asi que se corrige por nombre.
+                std::string lowerBase = baseName;
+                std::transform(lowerBase.begin(), lowerBase.end(), lowerBase.begin(),
+                    [](unsigned char c) { return std::tolower(c); });
+                if (lowerBase == "bakerhouse")
+                    go.transform.rotation.x = 90.0f;
                 go.transform.scale = glm::vec3(fbxUnitScale);
     
                 if (go.meshComp.mesh.textureID != 0)

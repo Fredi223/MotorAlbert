@@ -152,7 +152,10 @@ static void ProcessAIMesh(
         if (ai_mesh->mTextureCoords[0])
         {
             mesh.vertices.push_back(ai_mesh->mTextureCoords[0][v].x);
-            mesh.vertices.push_back(1.0f - ai_mesh->mTextureCoords[0][v].y);
+            // La V de FBX ya tiene el origen abajo, como OpenGL; la imagen se voltea al cargarla
+            // (stbi_set_flip_vertically_on_load). Antes aqui se invertia otra vez para compensar el
+            // flip que aiProcess_ConvertToLeftHanded hacia por dentro; sin ese flag sobra.
+            mesh.vertices.push_back(ai_mesh->mTextureCoords[0][v].y);
         }
         else
         {
@@ -188,8 +191,6 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
         aiProcess_CalcTangentSpace |
         aiProcess_JoinIdenticalVertices |
         aiProcess_OptimizeMeshes |
-
-        aiProcess_ConvertToLeftHanded |
         aiProcess_PreTransformVertices
     );
 
