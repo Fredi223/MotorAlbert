@@ -218,6 +218,13 @@ licencias de las librerías de terceros están en la carpeta [`Licences/`](Licen
    las DLLs necesarias (SDL3, assimp, etc.) y CMake copia la carpeta `Resources/`,
    así que se puede lanzar directamente desde ahí.
 
+6. Para la build Release (la que se entrega) se usa el preset `release`; el
+   resultado queda en `build/Release/`:
+
+   ```cmd
+   cmake --build --preset=release
+   ```
+
 ### Estructura del repositorio
 
 ```
