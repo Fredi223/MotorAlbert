@@ -19,16 +19,15 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"   // DockBuilder
 
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
-
 #include "DdsLoader.h"
 #include "GameObject.h"
 #include "Logger.h"
 #include "ModuleModelLoader.h"
 #include "Octree.h"
 #include "Primitives.h"
+#include "Shaders.h"
 #include "SystemInfo.h"
+#include "TextureLoader.h"
 
 int g_fpsCap = 60;
 ImVec4 g_clearColor = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
@@ -40,131 +39,6 @@ std::deque<float> g_frameTimes; // ms
 Uint64 g_lastFrameTick = 0;
 
 GLuint checkerTexture = 0;
-
-// ============================================================
-// SHADERS BÁSICOS
-// ============================================================
-const char* vertexShaderSource = R"(
-#version 460 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNormal;
-layout (location = 2) in vec2 aTexCoord;
-layout (location = 3) in vec3 aColor;
-
-out vec3 Normal;
-out vec3 FragPos;
-out vec3 Color;
-out vec2 TexCoord;
-
-uniform mat4 uModel;
-uniform mat4 uView;
-uniform mat4 uProjection;
-
-void main()
-{
-    FragPos = vec3(uModel * vec4(aPos, 1.0));
-    Normal = mat3(transpose(inverse(uModel))) * aNormal;
-    Color = aColor;
-    TexCoord = aTexCoord;
-    gl_Position = uProjection * uView * vec4(FragPos, 1.0);
-}
-)";
-
-const char* fragmentShaderSource = R"(
-#version 460 core
-in vec3 Normal;
-in vec3 Color;
-in vec2 TexCoord;
-
-out vec4 FragColor;
-
-uniform sampler2D uTexture;
-
-void main()
-{
-    vec3 light = normalize(vec3(0.3, 0.5, 0.8));
-    float diff = max(dot(normalize(Normal), light), 0.0);
-
-    vec3 texColor = texture(uTexture, TexCoord).rgb;
-    vec3 finalColor = texColor * (0.4 + diff * 0.6);   // luz ambiente 0.4 + difusa
-
-    FragColor = vec4(finalColor, 1.0);
-}
-)";
-
-// ============================================================
-// SHADERS PARA DIBUJAR NORMALES
-// ============================================================
-const char* normalVertexShaderSrc = R"(
-#version 460 core
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNormal;
-
-uniform mat4 uModel;
-uniform mat4 uView;
-uniform mat4 uProjection;
-uniform float uNormalLength;
-
-out vec3 vStart;
-out vec3 vEnd;
-
-void main()
-{
-    vStart = vec3(uModel * vec4(aPos, 1.0));
-    vEnd = vec3(uModel * vec4(aPos + aNormal * uNormalLength, 1.0));
-}
-)";
-
-const char* normalGeometryShaderSrc = R"(
-#version 460 core
-layout (points) in;
-layout (line_strip, max_vertices = 2) out;
-
-in vec3 vStart[];
-in vec3 vEnd[];
-
-uniform mat4 uView;
-uniform mat4 uProjection;
-
-void main()
-{
-    gl_Position = uProjection * uView * vec4(vStart[0], 1.0);
-    EmitVertex();
-    gl_Position = uProjection * uView * vec4(vEnd[0], 1.0);
-    EmitVertex();
-    EndPrimitive();
-}
-)";
-
-const char* normalFragmentShaderSrc = R"(
-#version 460 core
-out vec4 FragColor;
-uniform vec3 uNormalColor;   // verde: normales por vertice; magenta: normales por cara
-void main()
-{
-    FragColor = vec4(uNormalColor, 1.0);
-}
-)";
-
-const char* gridVertexShaderSrc = R"(
-#version 460 core
-layout(location = 0) in vec3 aPos;
-uniform mat4 uView;
-uniform mat4 uProjection;
-void main()
-{
-    gl_Position = uProjection * uView * vec4(aPos, 1.0);
-}
-)";
-
-const char* gridFragmentShaderSrc = R"(
-#version 460 core
-out vec4 FragColor;
-void main()
-{
-    FragColor = vec4(0.6, 0.6, 0.6, 1.0);
-}
-)";
 
 
 // ============================================================
@@ -297,82 +171,6 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
     Console::LogInfo("GPU: %s", (const char*)glGetString(GL_RENDERER));
 
     return true;
-}
-
-// ============================================================
-// COMPILAR Y CREAR SHADER PROGRAM
-// ============================================================
-static GLuint CompileShader(GLenum type, const char* src)
-{
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &src, NULL);
-    glCompileShader(shader);
-    GLint success;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success)
-    {
-        char info[512];
-        glGetShaderInfoLog(shader, 512, NULL, info);
-        Console::LogError("Error compilando shader: %s", info);
-    }
-    return shader;
-}
-
-// geometrySrc es opcional (solo lo usa el shader de normales).
-GLuint CreateShaderProgram(const char* vertexSrc, const char* fragmentSrc, const char* geometrySrc = nullptr)
-{
-    GLuint vs = CompileShader(GL_VERTEX_SHADER, vertexSrc);
-    GLuint gs = geometrySrc ? CompileShader(GL_GEOMETRY_SHADER, geometrySrc) : 0;
-    GLuint fs = CompileShader(GL_FRAGMENT_SHADER, fragmentSrc);
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vs);
-    if (gs) glAttachShader(program, gs);
-    glAttachShader(program, fs);
-    glLinkProgram(program);
-
-    GLint success;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-    if (!success)
-    {
-        char info[512];
-        glGetProgramInfoLog(program, 512, NULL, info);
-        Console::LogError("Error linkeando shader program: %s", info);
-    }
-
-    glDeleteShader(vs);
-    if (gs) glDeleteShader(gs);
-    glDeleteShader(fs);
-
-    return program;
-}
-
-// Sube una imagen a una textura RGBA con mipmaps. Se fuerza RGBA (4 canales) porque una imagen de 1
-// o 2 canales (grises), o de 3 con ancho no multiplo de 4, se subiria con un formato o una
-// alineacion que no le corresponde. Devuelve 0 si stb_image no puede leerla.
-static GLuint LoadImageTexture(const std::string& path)
-{
-    int w, h, channels;
-    unsigned char* img = stbi_load(path.c_str(), &w, &h, &channels, 4);
-    if (!img)
-    {
-        Console::LogError("stb_image: no se pudo cargar la textura %s (%s)", path.c_str(), stbi_failure_reason());
-        return 0;
-    }
-
-    GLuint tex;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    stbi_image_free(img);
-
-    Console::LogInfo("stb_image: textura cargada %s (%dx%d, %d canales)", path.c_str(), w, h, channels);
-    return tex;
 }
 
 bool RayIntersectsAABB(const glm::vec3& rayOrig, const glm::vec3& rayDir,
@@ -536,8 +334,6 @@ bool ComputeAABBFromMesh(const Mesh& mesh, glm::vec3& outMin, glm::vec3& outMax)
 int main(int argc, char* argv[])
 {
     Console::Init();
-
-    stbi_set_flip_vertically_on_load(true);
 
     SDL_Window* window = nullptr;
     SDL_GLContext context;
