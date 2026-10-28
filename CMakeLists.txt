@@ -28,12 +28,16 @@ add_executable(MotorAlbert
     src/Octree.h
     src/Primitives.cpp
     src/Primitives.h
+    src/Scene.cpp
+    src/Scene.h
     src/Shaders.cpp
     src/Shaders.h
     src/SystemInfo.cpp
     src/SystemInfo.h
     src/TextureLoader.cpp
     src/TextureLoader.h
+    src/UndoHistory.cpp
+    src/UndoHistory.h
     src/DdsLoader.cpp
     src/DdsLoader.h
     src/GameObject.h

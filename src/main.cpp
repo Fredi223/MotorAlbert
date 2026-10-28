@@ -27,9 +27,11 @@
 #include "ModuleModelLoader.h"
 #include "Octree.h"
 #include "Primitives.h"
+#include "Scene.h"
 #include "Shaders.h"
 #include "SystemInfo.h"
 #include "TextureLoader.h"
+#include "UndoHistory.h"
 
 int g_fpsCap = 60;
 ImVec4 g_clearColor = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
@@ -286,8 +288,14 @@ int main(int argc, char* argv[])
     // ========================================================
     // La escena empieza vacia; RebuildOctree recalcula los limites del octree cada vez que se
     // anade algo (la Baker House inicial, drag & drop o una primitiva).
-    std::vector<GameObject> gameObjects;
-    Octree sceneOctree(glm::vec3(-1000.0f), glm::vec3(1000.0f));
+    Scene scene;
+    scene.defaultTexture = checkerTexture;
+    std::vector<GameObject>& gameObjects = scene.objects;   // alias provisional para los paneles del editor
+
+    // El historial de undo guarda snapshots que pueden usar texturas que ya no estan en la
+    // escena: la escena le pregunta antes de liberar una.
+    UndoHistory history;
+    scene.isTextureUsedElsewhere = [&history](GLuint tex) { return history.UsesTexture(tex); };
 
     glUseProgram(shaderProgram);
     glUniform1i(glGetUniformLocation(shaderProgram, "uTexture"), 0);
@@ -368,242 +376,6 @@ int main(int argc, char* argv[])
             camera.orbitTarget.x, camera.orbitTarget.y, camera.orbitTarget.z, camera.orbitDistance);
         };
 
-    // El octree guarda GameObject* directos a los elementos de gameObjects (std::vector por
-    // valor). Cualquier insert/erase/push_back invalida esos punteros (reasigna el buffer o
-    // desplaza y destruye elementos), asi que toda mutacion estructural del vector debe
-    // marcar este flag; el bucle principal reconstruye el octree antes de volver a usarlo.
-    bool sceneStructureDirty = false;
-
-    // --- Undo/Redo por snapshots de la escena ---
-    // Un SceneState es una copia de los GameObject SOLO con datos de CPU (vertices, indices,
-    // transform...): los handles de GL de las mallas se ponen a 0, de modo que ningun snapshot
-    // posee buffers de GPU y al restaurar se regeneran con SetupMesh (igual que en Duplicate).
-    // Las texturas si se comparten por handle, asi que ReleaseTextureIfUnused tambien mira el
-    // historial: una textura no se borra mientras algun snapshot pueda volver a necesitarla.
-    struct SceneState {
-        std::vector<GameObject> objects;
-        std::vector<GLuint> meshIds;   // VAO que tenia cada objeto vivo al capturar: identidad de la malla
-        int selected = -1;
-    };
-    const size_t UNDO_LIMIT = 30;
-    std::deque<SceneState> undoStack, redoStack;
-    SceneState committed;              // ultimo estado ya confirmado; se apila en undo al cambiar la escena
-    bool wantUndo = false, wantRedo = false;
-
-    // Una textura puede estar compartida entre varios objetos (duplicados): solo se libera
-    // cuando ningun GameObject la usa ya, y nunca la checker, que es global. Hay que llamarla
-    // DESPUES de haber quitado la textura del objeto que la dejaba, o ese objeto la seguiria contando.
-    auto ReleaseTextureIfUnused = [&](GLuint tex) {
-        if (tex == 0 || tex == checkerTexture) return;
-        auto usesTex = [tex](const GameObject& o) { return o.texComp.textureID == tex; };
-        auto stateUsesTex = [&](const SceneState& s) { return std::any_of(s.objects.begin(), s.objects.end(), usesTex); };
-        const bool inUse = std::any_of(gameObjects.begin(), gameObjects.end(), usesTex)
-            || stateUsesTex(committed)
-            || std::any_of(undoStack.begin(), undoStack.end(), stateUsesTex)
-            || std::any_of(redoStack.begin(), redoStack.end(), stateUsesTex);
-        if (!inUse) glDeleteTextures(1, &tex);
-        };
-
-    auto CaptureState = [&]() {
-        SceneState s;
-        s.objects = gameObjects;
-        for (GameObject& o : s.objects) {
-            Mesh& m = o.meshComp.mesh;
-            s.meshIds.push_back(m.VAO);
-            m.VAO = m.VBO = m.EBO = 0;
-            m.faceNormalVAO = m.faceNormalVBO = 0;
-            m.faceNormalCount = 0;
-        }
-        s.selected = selectedObject;
-        return s;
-        };
-
-    // Compara la escena viva con el ultimo estado confirmado (la seleccion no cuenta).
-    auto SceneMatches = [&](const SceneState& s) {
-        if (s.objects.size() != gameObjects.size()) return false;
-        for (size_t i = 0; i < gameObjects.size(); ++i) {
-            const GameObject& a = s.objects[i];
-            const GameObject& b = gameObjects[i];
-            if (s.meshIds[i] != b.meshComp.mesh.VAO || a.name != b.name || a.hidden != b.hidden ||
-                a.normalsMode != b.normalsMode || a.showFaceNormals != b.showFaceNormals ||
-                a.texComp.textureID != b.texComp.textureID || a.texComp.path != b.texComp.path ||
-                a.transform.position != b.transform.position ||
-                a.transform.rotation != b.transform.rotation ||
-                a.transform.scale != b.transform.scale)
-                return false;
-        }
-        return true;
-        };
-
-    // Sustituye la escena viva por el estado dado (que se consume).
-    auto ApplyState = [&](SceneState& s) {
-        for (GameObject& o : gameObjects) o.Destroy();
-        gameObjects = std::move(s.objects);
-        for (GameObject& o : gameObjects) o.meshComp.mesh.SetupMesh();
-        selectedObject = (s.selected >= 0 && s.selected < (int)gameObjects.size()) ? s.selected : -1;
-        sceneStructureDirty = true;
-        committed = CaptureState();   // refresca los VAO nuevos y evita registrar la restauracion como cambio
-        };
-
-    // Llamar una vez por frame, con la UI ya construida. Los cambios se agrupan: mientras haya un
-    // widget activo (arrastrar un DragFloat, escribir un nombre) no se confirma nada, asi un
-    // arrastre entero es un solo paso de undo.
-    auto UpdateUndoHistory = [&]() {
-        const bool canEdit = !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput;
-
-        if (canEdit && wantUndo && !undoStack.empty()) {
-            SceneState target = std::move(undoStack.back());
-            undoStack.pop_back();
-            redoStack.push_back(std::move(committed));
-            ApplyState(target);
-        }
-        else if (canEdit && wantRedo && !redoStack.empty()) {
-            SceneState target = std::move(redoStack.back());
-            redoStack.pop_back();
-            undoStack.push_back(std::move(committed));
-            ApplyState(target);
-        }
-        wantUndo = wantRedo = false;
-
-        if (SceneMatches(committed)) {
-            committed.selected = selectedObject;   // la seleccion previa al cambio es la que se recupera al deshacer
-            return;
-        }
-        if (!ImGui::IsAnyItemActive()) {
-            std::vector<SceneState> discarded;
-            undoStack.push_back(std::move(committed));
-            while (undoStack.size() > UNDO_LIMIT) {
-                discarded.push_back(std::move(undoStack.front()));
-                undoStack.pop_front();
-            }
-            for (SceneState& s : redoStack) discarded.push_back(std::move(s));
-            redoStack.clear();
-            committed = CaptureState();
-            for (const SceneState& s : discarded)
-                for (const GameObject& o : s.objects)
-                    ReleaseTextureIfUnused(o.texComp.textureID);
-        }
-        };
-
-    auto DuplicateGameObject = [&](std::vector<GameObject>& list, int index) -> int {
-        if (index < 0 || index >= (int)list.size()) return -1;
-        GameObject copy = list[index];
-        // La copia de Mesh duplica tambien los handles de GL (VAO/VBO/EBO): original y copia
-        // apuntarian a los mismos buffers y borrar uno dejaria al otro sin geometria.
-        // SetupMesh genera buffers propios a partir de vertices/indices, que si se copiaron.
-        copy.meshComp.mesh.SetupMesh();
-        copy.name = list[index].name + "_copy";
-        copy.transform.position += glm::vec3(0.1f, 0.0f, 0.1f);
-        list.insert(list.begin() + index + 1, std::move(copy));
-        sceneStructureDirty = true;
-        return index + 1;
-        };
-
-    auto EraseGameObjectAt = [&](std::vector<GameObject>& list, int index, int& selected) -> void {
-        if (index < 0 || index >= (int)list.size()) return;
-        const GLuint tex = list[index].texComp.textureID;
-        list[index].Destroy();
-        list.erase(list.begin() + index);
-        sceneStructureDirty = true;
-        ReleaseTextureIfUnused(tex);
-        if (selected == index) {
-            selected = -1;
-        }
-        else if (selected > index) {
-            selected = selected - 1;
-        }
-        };
-
-    auto RebuildOctree = [&]()
-        {
-            glm::vec3 minB, maxB;
-
-            if (gameObjects.empty())
-            {
-                // ComputeSceneAABB no tiene objetos de los que sacar limites
-                // reales (degeneraria a +-infinito). Usamos los mismos limites
-                // fijos que ya se usan para la query de dibujado (frustumMin/Max).
-                minB = glm::vec3(-1000.0f);
-                maxB = glm::vec3(1000.0f);
-            }
-            else
-            {
-                ComputeSceneAABB(gameObjects, minB, maxB);
-            }
-
-            sceneOctree.Rebuild(minB, maxB);
-
-            for (auto& go : gameObjects)
-            {
-                go.UpdateWorldAABB();
-                sceneOctree.Insert(&go);
-            }
-
-            Console::LogInfo("Octree rebuilt (%zu objects)", gameObjects.size());
-        };
-
-    // Carga un .fbx y crea un GameObject por malla. Lo usan el drag & drop y la carga inicial.
-    auto LoadFbxIntoScene = [&](const std::string& filePath)
-        {
-            float fbxUnitScale = 1.0f;
-            std::vector<Mesh> newMeshes = LoadModel(filePath, &fbxUnitScale);
-
-            const size_t lastSlash = filePath.find_last_of("/\\");
-            const size_t nameStart = (lastSlash == std::string::npos) ? 0 : lastSlash + 1;
-            const size_t lastDot = filePath.find_last_of('.');
-            const std::string baseName = filePath.substr(nameStart,
-                (lastDot == std::string::npos || lastDot < nameStart ? filePath.size() : lastDot) - nameStart);
-            const std::string fbxDir = filePath.substr(0, nameStart);
-
-            // BakerHouse.fbx es inconsistente: sus vertices ya vienen con Y arriba, pero su nodo
-            // lleva ademas una rotacion de -90 en X (pensada para modelos con Z arriba, como el
-            // Hotdog). Al hornearla la casa queda tumbada, con el tejado hacia -Z; +90 en X la
-            // deja derecha. No hay regla general que distinga este caso, asi que se corrige por nombre.
-            std::string lowerBase = baseName;
-            std::transform(lowerBase.begin(), lowerBase.end(), lowerBase.begin(),
-                [](unsigned char c) { return std::tolower(c); });
-            const bool isBakerHouse = (lowerBase == "bakerhouse");
-
-            const size_t currentSize = gameObjects.size();
-            for (size_t i = 0; i < newMeshes.size(); ++i)
-            {
-                GameObject go;
-                go.name = baseName + "_" + std::to_string(i + currentSize);
-                go.meshComp.mesh = std::move(newMeshes[i]);
-
-                ComputeAABBFromMesh(go.meshComp.mesh, go.aabbMin, go.aabbMax);
-
-                if (isBakerHouse) go.transform.rotation.x = 90.0f;
-                go.transform.scale = glm::vec3(fbxUnitScale);
-
-                go.texComp.textureID = checkerTexture;
-                const std::string& storedPath = go.meshComp.mesh.texturePath;
-                if (!storedPath.empty())
-                {
-                    // La ruta del material puede ser solo el nombre de archivo o la ruta absoluta del
-                    // PC donde se exporto el FBX (que aqui no existe): se usa solo el nombre del archivo,
-                    // buscado junto al .fbx (no en el directorio de trabajo del proceso).
-                    const size_t texNameStart = storedPath.find_last_of("/\\");
-                    const std::string textureName = (texNameStart == std::string::npos) ? storedPath : storedPath.substr(texNameStart + 1);
-                    const std::string textureFullPath = fbxDir + textureName;
-
-                    if (GLuint tex = LoadImageTexture(textureFullPath))
-                    {
-                        go.texComp.textureID = tex;
-                        go.texComp.path = textureFullPath;
-                    }
-                    else
-                    {
-                        Console::LogError("Se usa la textura checker para %s", go.name.c_str());
-                    }
-                }
-
-                gameObjects.push_back(std::move(go));
-            }
-            RebuildOctree();
-            Console::LogInfo("FBX cargado: %s (%zu mallas -> GameObjects)", filePath.c_str(), newMeshes.size());
-        };
-
     // Aplica una textura recien cargada (PNG/JPG/TGA/DDS soltada en la ventana) al objeto
     // seleccionado, o al primero si no hay seleccion. Si no hay objetos, la libera.
     auto AssignDroppedTexture = [&](GLuint newTex, const std::string& filePath)
@@ -622,24 +394,8 @@ int main(int argc, char* argv[])
             const GLuint oldTex = go.texComp.textureID;
             go.texComp.textureID = newTex;
             go.texComp.path = filePath;
-            ReleaseTextureIfUnused(oldTex);
+            scene.ReleaseTextureIfUnused(oldTex);
             Console::LogInfo("Textura aplicada a: %s (path: %s)", go.name.c_str(), filePath.c_str());
-        };
-
-    // Crea un GameObject con una geometria basica (ver Primitives.h), con la textura checker
-    // para que se vean las UV, y lo deja seleccionado.
-    auto AddPrimitive = [&](const char* name, Mesh mesh)
-        {
-            GameObject go;
-            go.name = name;
-            go.meshComp.mesh = std::move(mesh);
-            ComputeAABBFromMesh(go.meshComp.mesh, go.aabbMin, go.aabbMax);
-            go.texComp.textureID = checkerTexture;
-
-            gameObjects.push_back(std::move(go));
-            RebuildOctree();
-            selectedObject = static_cast<int>(gameObjects.size()) - 1;
-            Console::LogInfo("Geometria basica creada: %s", name);
         };
 
     // Baker House se carga al arrancar desde Resources/, que vive junto al ejecutable (CMake
@@ -647,12 +403,12 @@ int main(int argc, char* argv[])
     {
         const char* basePath = SDL_GetBasePath();
         const std::string bakerHouse = std::string(basePath ? basePath : "") + "Resources/BakerHouse.fbx";
-        LoadFbxIntoScene(bakerHouse);
+        scene.LoadFbx(bakerHouse);
     }
 
     Console::LogInfo("Iniciando bucle principal");
 
-    committed = CaptureState();   // estado inicial: el primer cambio apilara este en undo
+    history.Reset(scene, selectedObject);   // estado inicial: el primer cambio apilara este en undo
 
     // ========================================================
     // BUCLE PRINCIPAL
@@ -744,7 +500,7 @@ int main(int argc, char* argv[])
                     }
                     else if (lower.ends_with(".fbx"))
                     {
-                        LoadFbxIntoScene(filePath);
+                        scene.LoadFbx(filePath);
                     }
                     else
                     {
@@ -775,8 +531,8 @@ int main(int argc, char* argv[])
 
             if (ImGui::BeginMenu("Edit"))
             {
-                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !undoStack.empty())) wantUndo = true;
-                if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !redoStack.empty())) wantRedo = true;
+                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, history.CanUndo())) history.RequestUndo();
+                if (ImGui::MenuItem("Redo", "Ctrl+Y", false, history.CanRedo())) history.RequestRedo();
                 ImGui::EndMenu();
             }
 
@@ -796,11 +552,11 @@ int main(int argc, char* argv[])
             {
                 if (ImGui::BeginMenu("3D Object"))
                 {
-                    if (ImGui::MenuItem("Cube")) AddPrimitive("Cube", CreateCubeMesh());
-                    if (ImGui::MenuItem("Sphere")) AddPrimitive("Sphere", CreateSphereMesh());
-                    if (ImGui::MenuItem("Cylinder")) AddPrimitive("Cylinder", CreateCylinderMesh());
-                    if (ImGui::MenuItem("Cone")) AddPrimitive("Cone", CreateConeMesh());
-                    if (ImGui::MenuItem("Plane")) AddPrimitive("Plane", CreatePlaneMesh());
+                    if (ImGui::MenuItem("Cube")) selectedObject = scene.AddPrimitive("Cube", CreateCubeMesh());
+                    if (ImGui::MenuItem("Sphere")) selectedObject = scene.AddPrimitive("Sphere", CreateSphereMesh());
+                    if (ImGui::MenuItem("Cylinder")) selectedObject = scene.AddPrimitive("Cylinder", CreateCylinderMesh());
+                    if (ImGui::MenuItem("Cone")) selectedObject = scene.AddPrimitive("Cone", CreateConeMesh());
+                    if (ImGui::MenuItem("Plane")) selectedObject = scene.AddPrimitive("Plane", CreatePlaneMesh());
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
@@ -1028,7 +784,7 @@ int main(int argc, char* argv[])
                     // sigue devolviendo el objeto aunque su hoja del octree sea la antigua.
                     if (transformCommitted)
                     {
-                        sceneStructureDirty = true;
+                        scene.structureDirty = true;
                     }
                 }
 
@@ -1083,7 +839,7 @@ int main(int argc, char* argv[])
                             const GLuint oldTex = go.texComp.textureID;
                             go.texComp.textureID = 0;
                             go.texComp.path.clear();
-                            ReleaseTextureIfUnused(oldTex);
+                            scene.ReleaseTextureIfUnused(oldTex);
                             Console::LogInfo("Texture removed from %s", go.name.c_str());
                         }
                         ImGui::SameLine();
@@ -1106,7 +862,7 @@ int main(int argc, char* argv[])
                         const GLuint oldTex = go.texComp.textureID;
                         go.texComp.textureID = checkerTexture;
                         go.texComp.path.clear();
-                        ReleaseTextureIfUnused(oldTex);
+                        scene.ReleaseTextureIfUnused(oldTex);
                         Console::LogInfo("Checker texture asignada a %s", go.name.c_str());
                     }
                 }
@@ -1287,7 +1043,7 @@ int main(int argc, char* argv[])
         // El octree se consulta con una caja fija que cubre toda la escena; el culling real es
         // el test del AABB de cada objeto contra el frustum.
         std::vector<GameObject*> visibleObjects;
-        sceneOctree.Query(glm::vec3(-1000.0f), glm::vec3(1000.0f), visibleObjects);
+        scene.octree.Query(glm::vec3(-1000.0f), glm::vec3(1000.0f), visibleObjects);
 
         int drawnCount = 0;
 
@@ -1351,12 +1107,12 @@ int main(int argc, char* argv[])
             const bool ctrl = ImGui::GetIO().KeyCtrl;
             if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
                 if (selectedObject >= 0 && selectedObject < (int)gameObjects.size()) {
-                    EraseGameObjectAt(gameObjects, selectedObject, selectedObject);
+                    scene.Erase(selectedObject, selectedObject);
                 }
             }
             if (ctrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
                 if (selectedObject >= 0 && selectedObject < (int)gameObjects.size()) {
-                    int newIdx = DuplicateGameObject(gameObjects, selectedObject);
+                    int newIdx = scene.Duplicate(selectedObject);
                     if (newIdx != -1) selectedObject = newIdx;
                 }
             }
@@ -1389,14 +1145,14 @@ int main(int argc, char* argv[])
                     ImGui::OpenPopup("Rename Popup");
                 }
                 if (ImGui::MenuItem("Duplicate")) {
-                    int newIdx = DuplicateGameObject(gameObjects, i);
+                    int newIdx = scene.Duplicate(i);
                     if (newIdx != -1) {
                         selectedObject = newIdx;
                         Console::LogInfo("Duplicated %s -> %s", gameObjects[i].name.c_str(), gameObjects[newIdx].name.c_str());
                     }
                 }
                 if (ImGui::MenuItem("Delete")) {
-                    EraseGameObjectAt(gameObjects, i, selectedObject);
+                    scene.Erase(i, selectedObject);
                 }
                 ImGui::EndPopup();
             }
@@ -1423,7 +1179,7 @@ int main(int argc, char* argv[])
                         if (selectedObject == src) selectedObject = dst;
                         else if (src < dst && selectedObject > src && selectedObject <= dst) selectedObject--;
                         else if (src > dst && selectedObject >= dst && selectedObject < src) selectedObject++;
-                        sceneStructureDirty = true;
+                        scene.structureDirty = true;
                         Console::LogInfo("Reordered: %d -> %d", src, dst);
                     }
                 }
@@ -1438,17 +1194,17 @@ int main(int argc, char* argv[])
         // sustituye la escena entera.
         if (io.KeyCtrl && !io.WantTextInput)
         {
-            if (ImGui::IsKeyPressed(ImGuiKey_Z)) { if (io.KeyShift) wantRedo = true; else wantUndo = true; }
-            else if (ImGui::IsKeyPressed(ImGuiKey_Y)) wantRedo = true;
+            if (ImGui::IsKeyPressed(ImGuiKey_Z)) { if (io.KeyShift) history.RequestRedo(); else history.RequestUndo(); }
+            else if (ImGui::IsKeyPressed(ImGuiKey_Y)) history.RequestRedo();
         }
-        UpdateUndoHistory();
+        history.Update(scene, selectedObject);
 
         // Reconstruir el octree justo aqui (y no al final del frame): el panel Viewport, mas
         // abajo, hace picking consultando el octree en este mismo frame.
-        if (sceneStructureDirty)
+        if (scene.structureDirty)
         {
-            RebuildOctree();
-            sceneStructureDirty = false;
+            scene.RebuildOctree();
+            scene.structureDirty = false;
         }
 
         if (ImGui::BeginPopupModal("Rename Popup", NULL, ImGuiWindowFlags_AlwaysAutoResize))
@@ -1543,7 +1299,7 @@ int main(int argc, char* argv[])
             // Candidatos: los objetos de las hojas del octree que toca la caja que envuelve el rayo.
             const glm::vec3 rayEnd = rayOrigin + rayDir * 10000.0f;
             std::vector<GameObject*> candidates;
-            sceneOctree.Query(glm::min(rayOrigin, rayEnd), glm::max(rayOrigin, rayEnd), candidates);
+            scene.octree.Query(glm::min(rayOrigin, rayEnd), glm::max(rayOrigin, rayEnd), candidates);
 
             for (GameObject* goPtr : candidates)
             {
