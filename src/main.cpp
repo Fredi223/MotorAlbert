@@ -881,7 +881,11 @@ int main(int argc, char* argv[])
 
     auto DuplicateGameObject = [&](std::vector<GameObject>& list, int index) -> int {
         if (index < 0 || index >= (int)list.size()) return -1;
-        GameObject copy = list[index]; 
+        GameObject copy = list[index];
+        // La copia de Mesh duplica tambien los handles de GL (VAO/VBO/EBO): original y copia
+        // apuntarian a los mismos buffers y borrar uno dejaria al otro sin geometria.
+        // SetupMesh genera buffers propios a partir de vertices/indices, que si se copiaron.
+        copy.meshComp.mesh.SetupMesh();
         copy.name = list[index].name + "_copy";
         copy.transform.position += glm::vec3(0.1f, 0.0f, 0.1f);
         list.insert(list.begin() + index + 1, std::move(copy));
@@ -891,9 +895,18 @@ int main(int argc, char* argv[])
 
     auto EraseGameObjectAt = [&](std::vector<GameObject>& list, int index, int& selected) -> void {
         if (index < 0 || index >= (int)list.size()) return;
+        const GLuint tex = list[index].texComp.textureID;
         list[index].Destroy();
         list.erase(list.begin() + index);
         sceneStructureDirty = true;
+
+        // La textura puede estar compartida con un duplicado: solo se borra si ya no la usa
+        // ningun otro objeto (y nunca la checker, que es global).
+        if (tex != 0 && tex != checkerTexture &&
+            std::none_of(list.begin(), list.end(), [tex](const GameObject& o) { return o.texComp.textureID == tex; }))
+        {
+            glDeleteTextures(1, &tex);
+        }
         if (selected == index) {
             selected = -1;
         }

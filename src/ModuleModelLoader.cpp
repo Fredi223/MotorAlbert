@@ -106,7 +106,10 @@ void Mesh::Destroy()
     if (EBO) { glDeleteBuffers(1, &EBO); EBO = 0; }
     if (VBO) { glDeleteBuffers(1, &VBO); VBO = 0; }
     if (VAO) { glDeleteVertexArrays(1, &VAO); VAO = 0; }
-    if (textureID) { glDeleteTextures(1, &textureID); textureID = 0; }
+    // La textura NO se borra aqui: varios GameObject pueden compartir el mismo GLuint
+    // (p. ej. un duplicado) y borrarla dejaria a los demas con un handle invalido.
+    // La liberacion la decide quien sabe quien la usa (ver EraseGameObjectAt en main.cpp).
+    textureID = 0;
 
     vertices.clear();
     indices.clear();
