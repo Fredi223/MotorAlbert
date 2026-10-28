@@ -1893,12 +1893,16 @@ int main(int argc, char* argv[])
             (relMouseX >= 0 && relMouseX < size.x &&
                 relMouseY >= 0 && relMouseY < size.y);
 
-        if ((int)size.x != viewportWidth || (int)size.y != viewportHeight)
+        // Minimo 1 px: con el panel colapsado o minimizado size puede ser 0, y un ancho/alto 0
+        // daria un framebuffer vacio y una proyeccion con aspect = x/0 (infinito o NaN).
+        const int newViewportW = std::max(1, (int)size.x);
+        const int newViewportH = std::max(1, (int)size.y);
+        if (newViewportW != viewportWidth || newViewportH != viewportHeight)
         {
-            viewportWidth = (int)size.x;
-            viewportHeight = (int)size.y;
-            viewportWidthF = size.x;
-            viewportHeightF = size.y;
+            viewportWidth = newViewportW;
+            viewportHeight = newViewportH;
+            viewportWidthF = (float)newViewportW;
+            viewportHeightF = (float)newViewportH;
 
             glBindTexture(GL_TEXTURE_2D, viewportTexture);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, viewportWidth, viewportHeight, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
