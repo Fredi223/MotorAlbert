@@ -62,6 +62,47 @@ void Mesh::SetupMesh()
     const int VERTEX_STRIDE_FLOATS = 11;
     vertexCount = static_cast<unsigned int>(vertices.size() / VERTEX_STRIDE_FLOATS);
 
+    // --- Normales por cara: centroide + normal geometrica de cada triangulo ---
+    auto position = [&](unsigned int idx) {
+        const size_t o = static_cast<size_t>(idx) * VERTEX_STRIDE_FLOATS;
+        return glm::vec3(vertices[o], vertices[o + 1], vertices[o + 2]);
+        };
+    auto vertexNormal = [&](unsigned int idx) {
+        const size_t o = static_cast<size_t>(idx) * VERTEX_STRIDE_FLOATS + 3;
+        return glm::vec3(vertices[o], vertices[o + 1], vertices[o + 2]);
+        };
+
+    std::vector<float> faceData;
+    faceData.reserve(indices.size() / 3 * 6);
+    for (size_t t = 0; t + 2 < indices.size(); t += 3)
+    {
+        const unsigned int i0 = indices[t], i1 = indices[t + 1], i2 = indices[t + 2];
+        const glm::vec3 p0 = position(i0), p1 = position(i1), p2 = position(i2);
+
+        glm::vec3 n = glm::cross(p1 - p0, p2 - p0);
+        const float len = glm::length(n);
+        if (len < 1e-12f) continue;   // triangulo degenerado: no tiene normal
+        n /= len;
+
+        // Si el orden de los vertices da una normal contraria a la de los vertices (modelo con
+        // winding invertido), se gira para que coincida con la que se usa para iluminar.
+        if (glm::dot(n, vertexNormal(i0) + vertexNormal(i1) + vertexNormal(i2)) < 0.0f) n = -n;
+
+        const glm::vec3 centroid = (p0 + p1 + p2) / 3.0f;
+        faceData.insert(faceData.end(), { centroid.x, centroid.y, centroid.z, n.x, n.y, n.z });
+    }
+    faceNormalCount = static_cast<unsigned int>(faceData.size() / 6);
+
+    glGenVertexArrays(1, &faceNormalVAO);
+    glGenBuffers(1, &faceNormalVBO);
+    glBindVertexArray(faceNormalVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, faceNormalVBO);
+    glBufferData(GL_ARRAY_BUFFER, faceData.size() * sizeof(float), faceData.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(0));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+    glBindVertexArray(0);
 }
 
 void Mesh::Draw() const
@@ -81,12 +122,24 @@ void Mesh::DrawNormals() const
     glBindVertexArray(0);
 }
 
+void Mesh::DrawFaceNormals() const
+{
+    if (faceNormalVAO == 0) return;
+
+    glBindVertexArray(faceNormalVAO);
+    glDrawArrays(GL_POINTS, 0, (GLsizei)faceNormalCount);
+    glBindVertexArray(0);
+}
+
 
 void Mesh::Destroy()
 {
     if (EBO) { glDeleteBuffers(1, &EBO); EBO = 0; }
     if (VBO) { glDeleteBuffers(1, &VBO); VBO = 0; }
     if (VAO) { glDeleteVertexArrays(1, &VAO); VAO = 0; }
+    if (faceNormalVBO) { glDeleteBuffers(1, &faceNormalVBO); faceNormalVBO = 0; }
+    if (faceNormalVAO) { glDeleteVertexArrays(1, &faceNormalVAO); faceNormalVAO = 0; }
+    faceNormalCount = 0;
     // La textura NO se borra aqui: varios GameObject pueden compartir el mismo GLuint
     // (p. ej. un duplicado) y borrarla dejaria a los demas con un handle invalido.
     // La liberacion la decide quien sabe quien la usa (ver EraseGameObjectAt en main.cpp).

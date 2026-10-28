@@ -150,9 +150,10 @@ void main()
 const char* normalFragmentShaderSrc = R"(
 #version 460 core
 out vec4 FragColor;
+uniform vec3 uNormalColor;   // verde: normales por vertice; magenta: normales por cara
 void main()
 {
-    FragColor = vec4(0.0, 1.0, 0.0, 1.0); // verde brillante: mas contraste que el rojo sobre materiales calidos
+    FragColor = vec4(uNormalColor, 1.0);
 }
 )";
 
@@ -193,6 +194,7 @@ bool firstMouse = true;
 float mouseSensitivity = 0.1f;
 int selectedObject = -1;
 bool showNormals = false;
+bool showFaceNormals = false;   // global: normales por cara de todos los objetos
 Uint32 lastNormalsToggleMs = 0;
 const Uint32 NORMALS_TOGGLE_DEBOUNCE = 150;
 const float NORMAL_LENGTH_PERCENT = 0.03f; // % de la diagonal del AABB local de la malla
@@ -785,6 +787,7 @@ int main(int argc, char* argv[])
     GLint normalUViewLoc = glGetUniformLocation(normalShaderProgram, "uView");
     GLint normalUProjLoc = glGetUniformLocation(normalShaderProgram, "uProjection");
     GLint normalULengthLoc = glGetUniformLocation(normalShaderProgram, "uNormalLength");
+    GLint normalUColorLoc = glGetUniformLocation(normalShaderProgram, "uNormalColor");
     // ========================================================
     // MATRICES DE CÁMARA
     // ========================================================
@@ -1253,6 +1256,7 @@ int main(int argc, char* argv[])
                 ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy);
                 ImGui::MenuItem("Configuration", nullptr, &showConfig);
                 ImGui::MenuItem("Normals", nullptr, &showNormals);
+                ImGui::MenuItem("Face Normals", nullptr, &showFaceNormals);
                 ImGui::MenuItem("About", nullptr, &showAbout);
                 ImGui::EndMenu();
             }
@@ -1560,7 +1564,8 @@ int main(int argc, char* argv[])
                         Console::LogInfo("Mostrar normales (local) de %s: %s", go.name.c_str(), normalsModes[go.normalsMode]);
                     }
 
-                    ImGui::TextDisabled("Global Normals: %s", showNormals ? "ON" : "OFF");
+                    ImGui::Checkbox("Mostrar normales por cara (mesh)", &go.showFaceNormals);
+                    ImGui::TextDisabled("Global Normals: %s | Face Normals: %s", showNormals ? "ON" : "OFF", showFaceNormals ? "ON" : "OFF");
 
                     if (ImGui::Button("Recalcular AABB")) {
                       
@@ -1590,6 +1595,13 @@ int main(int argc, char* argv[])
 
                     if (go.texComp.textureID != 0)
                     {
+                        // El tamano se pregunta a OpenGL (nivel 0 de la textura) en vez de guardarlo,
+                        // asi vale para cualquier origen: FBX, drag & drop o checker.
+                        GLint texW = 0, texH = 0;
+                        glGetTextureLevelParameteriv(go.texComp.textureID, 0, GL_TEXTURE_WIDTH, &texW);
+                        glGetTextureLevelParameteriv(go.texComp.textureID, 0, GL_TEXTURE_HEIGHT, &texH);
+                        ImGui::Text("Size: %d x %d", texW, texH);
+
                         ImGui::Image((ImTextureID)(intptr_t)go.texComp.textureID, ImVec2(128, 128), ImVec2(0, 1), ImVec2(1, 0));
                         if (ImGui::Button("Remove Texture"))
                         {
@@ -1771,7 +1783,8 @@ int main(int argc, char* argv[])
 
             bool drawNormalsForThis = (go.normalsMode == GameObject::NM_ForceOn) ||
                 (go.normalsMode == GameObject::NM_UseGlobal && showNormals);
-            if (drawNormalsForThis)
+            const bool drawFaceNormalsForThis = go.showFaceNormals || showFaceNormals;
+            if (drawNormalsForThis || drawFaceNormalsForThis)
             {
                 glUseProgram(normalShaderProgram);
                 glm::mat4 model = go.transform.GetMatrix();
@@ -1784,7 +1797,16 @@ int main(int argc, char* argv[])
                 float localDiag = glm::length(go.aabbMax - go.aabbMin);
                 glUniform1f(normalULengthLoc, localDiag * NORMAL_LENGTH_PERCENT);
 
-                go.meshComp.mesh.DrawNormals();
+                if (drawNormalsForThis)
+                {
+                    glUniform3f(normalUColorLoc, 0.0f, 1.0f, 0.0f);
+                    go.meshComp.mesh.DrawNormals();
+                }
+                if (drawFaceNormalsForThis)
+                {
+                    glUniform3f(normalUColorLoc, 1.0f, 0.2f, 1.0f);
+                    go.meshComp.mesh.DrawFaceNormals();
+                }
                 glUseProgram(shaderProgram);
             }
         }

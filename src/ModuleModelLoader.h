@@ -12,12 +12,19 @@ struct Mesh {
     std::string texturePath;
     unsigned int indexCount = 0;
     unsigned int vertexCount = 0;
-    std::vector<float> vertices; 
+    std::vector<float> vertices;
     std::vector<unsigned int> indices;
 
-    void SetupMesh();   
-    void Draw() const;  
+    // Normales por cara: un punto por triangulo (centroide + normal, 6 floats) que se dibuja
+    // con el mismo shader que las normales por vertice. Los crea SetupMesh.
+    GLuint faceNormalVAO = 0;
+    GLuint faceNormalVBO = 0;
+    unsigned int faceNormalCount = 0;
+
+    void SetupMesh();
+    void Draw() const;
     void DrawNormals() const;
+    void DrawFaceNormals() const;
     void Destroy();     
 };
 // outUnitScale (opcional): factor de conversion a metros deducido del

@@ -68,6 +68,7 @@ struct GameObject
     };
 
     NormalsMode normalsMode = NM_UseGlobal;
+    bool showFaceNormals = false;   // normales por cara (triangulo) de este objeto
 
     std::string name;
     Transform transform;     
