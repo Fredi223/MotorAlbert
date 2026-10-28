@@ -1600,19 +1600,9 @@ int main(int argc, char* argv[])
                 ImGui::Text("GLSL Version: %s", glslVersion ? (const char*)glslVersion : "unknown");
 
                 // Assimp version
-                #ifdef ASSIMP_VERSION_MAJOR
-                ImGui::Text("Assimp: %d.%d.%d", ASSIMP_VERSION_MAJOR, ASSIMP_VERSION_MINOR, ASSIMP_VERSION_REVISION);
-                #else
-                #if defined(AI_CONFIG_BOOTSTRAP)
-                ImGui::Text("Assimp: (AI macros available)");
-                #else
-                #ifdef aiGetVersionMajor
-                ImGui::Text("Assimp: %d.%d.%d", aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision());
-                #else
-                ImGui::Text("Assimp: (version unknown)");
-                #endif
-                #endif
-                #endif
+                // aiGetVersion* son funciones (assimp/version.h), no macros: los #ifdef anteriores
+                // sobre ellas nunca se cumplian y se mostraba "version unknown".
+                ImGui::Text("Assimp: %u.%u.%u", aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision());
 
                 ImGui::Separator();
                 ImGui::Text("GLAD reported vendor/renderer via glGetString.");

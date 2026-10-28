@@ -21,25 +21,6 @@ glm::mat4 AiToGlm(const aiMatrix4x4& m)
     );
 }
 
-void CalculateMeshAABB(const Mesh& mesh, glm::vec3& outMin, glm::vec3& outMax)
-{
-    outMin = glm::vec3(FLT_MAX);
-    outMax = glm::vec3(-FLT_MAX);
-
-    for (size_t i = 0; i < mesh.vertices.size(); i += 11)
-    {
-        glm::vec3 v(
-            mesh.vertices[i + 0],
-            mesh.vertices[i + 1],
-            mesh.vertices[i + 2]
-        );
-
-        outMin = glm::min(outMin, v);
-        outMax = glm::max(outMax, v);
-    }
-}
-
-
 void Mesh::SetupMesh()
 {
     if (vertices.empty() || indices.empty()) return;
