@@ -184,7 +184,7 @@ glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
 glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
 
 float cameraSpeed = 3.0f;                       // unidades de mundo por segundo
-const float CAMERA_SPRINT_MULTIPLIER = 3.0f;    // factor al mantener Shift
+const float CAMERA_SPRINT_MULTIPLIER = 2.0f;    // factor al mantener Shift (la guia de entrega pide duplicar)
 const float CAMERA_MAX_DELTA_TIME = 0.1f;       // s; acota tirones para no teletransportar la cámara
 float yaw = -90.0f;
 float pitch = 0.0f;
