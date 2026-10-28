@@ -19,6 +19,7 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"   // DockBuilder
 
+#include "Camera.h"
 #include "DdsLoader.h"
 #include "GameObject.h"
 #include "Geometry.h"
@@ -45,53 +46,14 @@ GLuint checkerTexture = 0;
 // ============================================================
 // CONTROL DE CÁMARA
 // ============================================================
-glm::vec3 cameraPos = glm::vec3(0.0f, 2.0f, 5.0f);
-glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
-glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
-
-float cameraSpeed = 3.0f;                       // unidades de mundo por segundo
-const float CAMERA_SPRINT_MULTIPLIER = 2.0f;    // factor al mantener Shift (la guia de entrega pide duplicar)
-const float CAMERA_MAX_DELTA_TIME = 0.1f;       // s; acota tirones para no teletransportar la cámara
-float yaw = -90.0f;
-float pitch = 0.0f;
+Camera camera;
 bool firstMouse = true;
-float mouseSensitivity = 0.1f;
 int selectedObject = -1;
 bool showNormals = false;
 bool showFaceNormals = false;   // global: normales por cara de todos los objetos
 Uint32 lastNormalsToggleMs = 0;
 const Uint32 NORMALS_TOGGLE_DEBOUNCE = 150;
 const float NORMAL_LENGTH_PERCENT = 0.03f; // % de la diagonal del AABB local de la malla
-
-// --- Cámara orbital (Alt + click izquierdo) ---
-const float CAMERA_FOV_DEG = 60.0f;             // FOV vertical; lo usan la proyección y el encuadre (F)
-float orbitZoomStep = 0.1f;             // fracción de distance por muesca de rueda
-const float ORBIT_MIN_RADIUS_FACTOR = 0.75f;    // distancia mínima = factor * radio del objeto...
-const float ORBIT_MIN_DISTANCE_FLOOR = 0.25f;   // ...con este suelo si no hay objeto
-const float ORBIT_MAX_DISTANCE = 90.0f;         // el far plane está en 100
-const float FRAME_MARGIN = 1.2f;                // holgura alrededor del objeto al encuadrar
-glm::vec3 orbitTarget = glm::vec3(0.0f);
-float orbitDistance = 5.0f;                     // distancia cámara-target
-float orbitRadius = 0.0f;                       // semidiagonal del AABB del target (0 = origen)
-
-// Recalcula cameraFront a partir de yaw/pitch (compartido por libre y orbital).
-static void UpdateCameraFront()
-{
-    glm::vec3 front;
-    front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
-    front.y = sin(glm::radians(pitch));
-    front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
-    cameraFront = glm::normalize(front);
-}
-
-// Inversa de UpdateCameraFront: orienta yaw/pitch para mirar de "from" hacia "to".
-static void AimCameraAt(const glm::vec3& from, const glm::vec3& to)
-{
-    glm::vec3 d = glm::normalize(to - from);
-    yaw = glm::degrees(atan2(d.z, d.x));
-    pitch = glm::clamp(glm::degrees(asin(d.y)), -89.0f, 89.0f);
-    UpdateCameraFront();
-}
 
 // Target orbital = centro del AABB de mundo del objeto seleccionado; sin selección, el origen.
 static void GetOrbitTarget(std::vector<GameObject>& objs, int sel, glm::vec3& outCenter, float& outRadius)
@@ -108,11 +70,6 @@ static void GetOrbitTarget(std::vector<GameObject>& objs, int sel, glm::vec3& ou
         outCenter = glm::vec3(0.0f);
         outRadius = 0.0f;
     }
-}
-
-static float OrbitMinDistance(float radius)
-{
-    return std::max(ORBIT_MIN_DISTANCE_FLOOR, radius * ORBIT_MIN_RADIUS_FACTOR);
 }
 
 // ============================================================
@@ -198,11 +155,8 @@ int main(int argc, char* argv[])
     g_lastFrameTick = SDL_GetPerformanceCounter();
     g_frameTimes.assign(PERF_HISTORY, 0.0f);
 
-    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
-
-    glm::mat4 projection = glm::perspective(glm::radians(CAMERA_FOV_DEG),
-        1280.0f / 720.0f,
-        0.1f, 100.0f);
+    glm::mat4 view = camera.GetViewMatrix();
+    glm::mat4 projection = camera.GetProjectionMatrix(1280.0f / 720.0f);
 
     // ============================================================
     // INICIALIZAR IMGUI
@@ -386,9 +340,8 @@ int main(int argc, char* argv[])
         SDL_WarpMouseInWindow(window, (float)prevMouseX, (float)prevMouseY);
         };
 
-    // Aplica el delta de ratón a yaw/pitch (mismos ángulos en ambos modos).
-    auto ApplyMouseLook = [&]() {
-        float dx = 0.f, dy = 0.f;
+    // Delta de ratón desde el último frame (mismo en ambos modos).
+    auto ReadMouseDelta = [&](float& dx, float& dy) {
         SDL_GetRelativeMouseState(&dx, &dy);
         // SDL acumula el movimiento desde la última llamada, y aquí solo se
         // llama con un botón mantenido: el primer delta trae todo el recorrido
@@ -398,11 +351,6 @@ int main(int argc, char* argv[])
             dx = dy = 0.f;
             firstMouse = false;
         }
-        yaw += dx * mouseSensitivity;
-        pitch += -dy * mouseSensitivity;
-        if (pitch > 89.0f) pitch = 89.0f;
-        if (pitch < -89.0f) pitch = -89.0f;
-        UpdateCameraFront();
         };
 
     // F: encuadra el objeto seleccionado manteniendo la dirección de mirada actual.
@@ -412,22 +360,12 @@ int main(int argc, char* argv[])
             Console::LogInfo("F: no hay ningun objeto seleccionado que encuadrar");
             return;
         }
-        GetOrbitTarget(gameObjects, selectedObject, orbitTarget, orbitRadius);
-
-        // La esfera que envuelve el AABB debe caber en el FOV mas estrecho
-        // (vertical u horizontal, segun el aspecto del viewport).
-        float aspect = viewportHeightF > 0.0f ? viewportWidthF / viewportHeightF : 1.0f;
-        float halfFovY = glm::radians(CAMERA_FOV_DEG) * 0.5f;
-        float halfFovX = atan(tan(halfFovY) * aspect);
-        float halfFov = std::min(halfFovY, halfFovX);
-
-        float radius = std::max(orbitRadius, 0.01f);
-        orbitDistance = radius / sin(halfFov) * FRAME_MARGIN;
-        orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(orbitRadius), ORBIT_MAX_DISTANCE);
-        cameraPos = orbitTarget - cameraFront * orbitDistance;
+        GetOrbitTarget(gameObjects, selectedObject, camera.orbitTarget, camera.orbitRadius);
+        camera.FrameTarget(viewportHeightF > 0.0f ? viewportWidthF / viewportHeightF : 1.0f);
 
         Console::LogInfo("Encuadrado %s: target=(%.2f, %.2f, %.2f) distancia=%.2f",
-            gameObjects[selectedObject].name.c_str(), orbitTarget.x, orbitTarget.y, orbitTarget.z, orbitDistance);
+            gameObjects[selectedObject].name.c_str(),
+            camera.orbitTarget.x, camera.orbitTarget.y, camera.orbitTarget.z, camera.orbitDistance);
         };
 
     // El octree guarda GameObject* directos a los elementos de gameObjects (std::vector por
@@ -917,13 +855,8 @@ int main(int argc, char* argv[])
                 orbitActive = true;
 
                 // Target: objeto seleccionado (o el origen). distance: la actual cámara-target.
-                // Se orienta la cámara hacia el target SIN moverla, así cameraPos ya cumple
-                // cameraPos = target - front * distance y no hay salto de posición.
-                GetOrbitTarget(gameObjects, selectedObject, orbitTarget, orbitRadius);
-                orbitDistance = glm::length(cameraPos - orbitTarget);
-                if (orbitDistance > 1e-4f) AimCameraAt(cameraPos, orbitTarget);
-                orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(orbitRadius), ORBIT_MAX_DISTANCE);
-                cameraPos = orbitTarget - cameraFront * orbitDistance;
+                GetOrbitTarget(gameObjects, selectedObject, camera.orbitTarget, camera.orbitRadius);
+                camera.BeginOrbit();
             }
         }
 
@@ -944,64 +877,40 @@ int main(int argc, char* argv[])
             io.WantCaptureMouse = false;
             io.WantCaptureKeyboard = false;
 
-            ApplyMouseLook();
+            float dx, dy;
+            ReadMouseDelta(dx, dy);
+            camera.Rotate(dx, dy);
 
             // Duración del último frame completo (g_frameTimes está en ms).
             float deltaTime = g_frameTimes.empty() ? 0.0f : g_frameTimes.back() / 1000.0f;
-            deltaTime = std::min(deltaTime, CAMERA_MAX_DELTA_TIME);
 
             const bool* keys = SDL_GetKeyboardState(NULL);
-            float speed = cameraSpeed * deltaTime;
-            if (keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT]) speed *= CAMERA_SPRINT_MULTIPLIER;
-
-            // Se suma la dirección de cada tecla y se normaliza el conjunto, para que
-            // combinar teclas (p. ej. W+D) no sea ×√2 más rápido que ir en línea recta.
-            // Teclas opuestas se anulan (vector cero: no hay movimiento).
-            glm::vec3 right = glm::normalize(glm::cross(cameraFront, cameraUp));
-            glm::vec3 moveDir(0.0f);
-            if (keys[SDL_SCANCODE_W]) moveDir += cameraFront;
-            if (keys[SDL_SCANCODE_S]) moveDir -= cameraFront;
-            if (keys[SDL_SCANCODE_A]) moveDir -= right;
-            if (keys[SDL_SCANCODE_D]) moveDir += right;
-            if (keys[SDL_SCANCODE_E]) moveDir += cameraUp;
-            if (keys[SDL_SCANCODE_Q]) moveDir -= cameraUp;
-            if (glm::length(moveDir) > 1e-6f) cameraPos += glm::normalize(moveDir) * speed;
+            float forward = (keys[SDL_SCANCODE_W] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_S] ? 1.0f : 0.0f);
+            float right = (keys[SDL_SCANCODE_D] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_A] ? 1.0f : 0.0f);
+            float upAxis = (keys[SDL_SCANCODE_E] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_Q] ? 1.0f : 0.0f);
+            bool sprint = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
+            camera.Move(forward, right, upAxis, deltaTime, sprint);
         }
 
         if (orbitActive && leftClickHeld)
         {
-            ApplyMouseLook();
-            cameraPos = orbitTarget - cameraFront * orbitDistance;
+            float dx, dy;
+            ReadMouseDelta(dx, dy);
+            camera.Orbit(dx, dy);
         }
 
-        // Rueda: acerca/aleja la cámara del target. En modo orbital cambia distance y recoloca
-        // la cámara sobre la esfera; fuera de él es un dolly a lo largo de cameraFront (sin
-        // girar la vista), con la distancia real al target como referencia.
+        // Rueda: fuera del modo orbital, el target de referencia es el objeto seleccionado.
         if (wheelDelta != 0.0f)
         {
             if (!orbitActive)
-            {
-                GetOrbitTarget(gameObjects, selectedObject, orbitTarget, orbitRadius);
-                orbitDistance = glm::length(cameraPos - orbitTarget);
-            }
-            float oldDistance = orbitDistance;
-            float newDistance = oldDistance * std::pow(1.0f - orbitZoomStep, wheelDelta);
-            // Sin atravesar el objeto ni salir del far plane, pero sin atrapar a una
-            // cámara que ya está fuera de ese rango: solo se limita el sentido que empeora.
-            if (newDistance < oldDistance)
-                newDistance = std::max(newDistance, std::min(oldDistance, OrbitMinDistance(orbitRadius)));
-            else
-                newDistance = std::min(newDistance, std::max(oldDistance, ORBIT_MAX_DISTANCE));
-            orbitDistance = newDistance;
-
-            if (orbitActive) cameraPos = orbitTarget - cameraFront * orbitDistance;
-            else cameraPos += cameraFront * (oldDistance - newDistance);
+                GetOrbitTarget(gameObjects, selectedObject, camera.orbitTarget, camera.orbitRadius);
+            camera.Zoom(wheelDelta, orbitActive);
         }
         wheelDelta = 0.0f;
 
-        // Único punto donde se recalcula view: refleja cameraPos/cameraFront tras cualquier
-        // modo, la rueda o F. El picking usa cameraPos como origen del rayo, y debe coincidir.
-        view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+        // Único punto donde se recalcula view: refleja la cámara tras cualquier modo, la rueda
+        // o F. El picking usa camera.position como origen del rayo, y debe coincidir.
+        view = camera.GetViewMatrix();
 
         glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
         glViewport(0, 0, viewportWidth, viewportHeight);
@@ -1011,11 +920,7 @@ int main(int argc, char* argv[])
         // ============================================================
         //  Actualizar proyección según el tamaño del viewport
         // ============================================================
-        projection = glm::perspective(
-            glm::radians(CAMERA_FOV_DEG),
-            viewportWidthF / viewportHeightF,
-            0.1f, 100.0f
-        );
+        projection = camera.GetProjectionMatrix(viewportWidthF / viewportHeightF);
 
         // ----------------------- DOCKSPACE PRINCIPAL -----------------------
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
@@ -1274,12 +1179,12 @@ int main(int argc, char* argv[])
 
             // --- Input / camara ---
             if (ImGui::CollapsingHeader("Input / Camera")) {
-                ImGui::DragFloat("Move speed (units/s)", &cameraSpeed, 0.1f, 0.1f, 100.0f);
-                ImGui::DragFloat("Mouse sensitivity", &mouseSensitivity, 0.005f, 0.01f, 1.0f);
-                ImGui::DragFloat("Zoom step (wheel)", &orbitZoomStep, 0.005f, 0.01f, 0.5f);
-                ImGui::Text("Sprint (Shift): x%.1f", CAMERA_SPRINT_MULTIPLIER);
+                ImGui::DragFloat("Move speed (units/s)", &camera.moveSpeed, 0.1f, 0.1f, 100.0f);
+                ImGui::DragFloat("Mouse sensitivity", &camera.mouseSensitivity, 0.005f, 0.01f, 1.0f);
+                ImGui::DragFloat("Zoom step (wheel)", &camera.zoomStep, 0.005f, 0.01f, 0.5f);
+                ImGui::Text("Sprint (Shift): x%.1f", Camera::SPRINT_MULTIPLIER);
                 ImGui::Text("Camera: (%.2f, %.2f, %.2f)  yaw %.1f  pitch %.1f",
-                    cameraPos.x, cameraPos.y, cameraPos.z, yaw, pitch);
+                    camera.position.x, camera.position.y, camera.position.z, camera.yaw, camera.pitch);
             }
 
             // --- Texturas ---
@@ -1622,7 +1527,7 @@ int main(int argc, char* argv[])
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !altHeld && mouseInsideViewport && !ImGui::IsAnyItemHovered())
         {
             const float PICK_TOLERANCE_PIXELS = 3.0f;   // margen de click alrededor del AABB, en pixeles de pantalla
-            const float pickPixelToWorld = 2.0f * std::tan(glm::radians(CAMERA_FOV_DEG) * 0.5f) / viewportHeightF; // mundo por pixel y por unidad de profundidad
+            const float pickPixelToWorld = 2.0f * std::tan(glm::radians(Camera::FOV_DEG) * 0.5f) / viewportHeightF; // mundo por pixel y por unidad de profundidad
 
             // relMouseX/Y ya son relativos al viewport (origen arriba-izq), tal como los espera la funcion
             glm::vec3 rayDir = ScreenToWorldRay_UnProject(
@@ -1630,7 +1535,7 @@ int main(int argc, char* argv[])
                 viewportWidthF, viewportHeightF,
                 projection, view);
 
-            glm::vec3 rayOrigin = cameraPos;
+            glm::vec3 rayOrigin = camera.position;
 
             float closestDistance = std::numeric_limits<float>::max();
             int hitIndex = -1;
@@ -1655,7 +1560,7 @@ int main(int argc, char* argv[])
                 // para que en sus caras mas cercanas, donde un pixel mide menos, el margen no se dispare.
                 const glm::vec3 aabbCenter = (go.worldAabbMin + go.worldAabbMax) * 0.5f;
                 const float halfDiag = 0.5f * glm::length(go.worldAabbMax - go.worldAabbMin);
-                const float depth = std::max(glm::dot(aabbCenter - rayOrigin, cameraFront) - halfDiag, 0.1f);
+                const float depth = std::max(glm::dot(aabbCenter - rayOrigin, camera.front) - halfDiag, 0.1f);
                 const float pickInflate = PICK_TOLERANCE_PIXELS * depth * pickPixelToWorld;
 
                 glm::vec3 pickMin = go.worldAabbMin - glm::vec3(pickInflate);
