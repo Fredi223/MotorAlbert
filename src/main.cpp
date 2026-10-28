@@ -19,6 +19,7 @@
 #include <cfloat>
 #include "ModuleModelLoader.h"
 #include "GameObject.h"
+#include "Primitives.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -1048,6 +1049,28 @@ int main(int argc, char* argv[])
     // ========================================================
     // BUCLE PRINCIPAL
     // ========================================================
+    // Crea un GameObject con una geometria basica (ver Primitives.h), con la textura checker
+    // para que se vean las UV, y lo deja seleccionado.
+    auto AddPrimitive = [&](const char* name, Mesh mesh)
+        {
+            GameObject go;
+            go.name = name;
+            go.meshComp.mesh = std::move(mesh);
+
+            glm::vec3 minB, maxB;
+            if (ComputeAABBFromMesh(go.meshComp.mesh, minB, maxB))
+            {
+                go.aabbMin = minB;
+                go.aabbMax = maxB;
+            }
+            go.texComp.textureID = checkerTexture;
+
+            gameObjects.push_back(std::move(go));
+            RebuildOctree();
+            selectedObject = static_cast<int>(gameObjects.size()) - 1;
+            Console::LogInfo("Geometria basica creada: %s", name);
+        };
+
     // Baker House se carga al arrancar desde Resources/, que vive junto al ejecutable (CMake
     // la copia ahi al compilar): asi funciona igual desde build/ que desde la carpeta de entrega.
     {
@@ -1231,6 +1254,20 @@ int main(int argc, char* argv[])
                 ImGui::MenuItem("Configuration", nullptr, &showConfig);
                 ImGui::MenuItem("Normals", nullptr, &showNormals);
                 ImGui::MenuItem("About", nullptr, &showAbout);
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("GameObject"))
+            {
+                if (ImGui::BeginMenu("3D Object"))
+                {
+                    if (ImGui::MenuItem("Cube")) AddPrimitive("Cube", CreateCubeMesh());
+                    if (ImGui::MenuItem("Sphere")) AddPrimitive("Sphere", CreateSphereMesh());
+                    if (ImGui::MenuItem("Cylinder")) AddPrimitive("Cylinder", CreateCylinderMesh());
+                    if (ImGui::MenuItem("Cone")) AddPrimitive("Cone", CreateConeMesh());
+                    if (ImGui::MenuItem("Plane")) AddPrimitive("Plane", CreatePlaneMesh());
+                    ImGui::EndMenu();
+                }
                 ImGui::EndMenu();
             }
 

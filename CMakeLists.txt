@@ -22,6 +22,8 @@ add_executable(MotorAlbert
     src/ModuleModelLoader.h
     src/Octree.cpp
     src/Octree.h
+    src/Primitives.cpp
+    src/Primitives.h
     src/GameObject.h
     src/Transform.h
     src/stb_image.h
