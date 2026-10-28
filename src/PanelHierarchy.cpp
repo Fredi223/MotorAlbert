@@ -9,7 +9,11 @@
 void Editor::DrawHierarchy()
 {
     // -------------------- Hierarchy panel (drag/rename/dup/delete) --------------------
-    ImGui::Begin("Hierarchy");
+    // Oculto desde View > Hierarchy. El undo y la reconstruccion del octree no dependen de este
+    // panel (van en DrawFrame), asi que siguen funcionando aunque no se dibuje.
+    if (!showHierarchy) return;
+
+    ImGui::Begin("Hierarchy", &showHierarchy);
 
     if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) {
         const bool ctrl = ImGui::GetIO().KeyCtrl;
