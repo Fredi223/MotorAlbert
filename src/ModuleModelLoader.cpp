@@ -257,6 +257,9 @@ static void ProcessAIMesh(
     }
 
     mesh.SetupMesh();
+    Console::LogInfo("Assimp: malla '%s' -> %zu vertices, %zu indices, textura difusa: %s",
+        ai_mesh->mName.C_Str(), mesh.vertices.size() / 11, mesh.indices.size(),
+        mesh.texturePath.empty() ? "ninguna" : mesh.texturePath.c_str());
     outMeshes.push_back(std::move(mesh));
 }
 
@@ -266,6 +269,7 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
     std::vector<Mesh> outMeshes;
     Assimp::Importer importer;
 
+    Console::LogInfo("Assimp: importando %s", path.c_str());
     const aiScene* scene = importer.ReadFile(
         path,
         aiProcess_Triangulate |
@@ -304,10 +308,11 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
     }
 
     if (!scene->HasMeshes()) {
-        std::cerr << "No meshes in scene\n";
+        Console::LogError("Assimp: %s no contiene mallas", path.c_str());
         return outMeshes;
     }
 
+    Console::LogInfo("Assimp: %u mallas, %u materiales", scene->mNumMeshes, scene->mNumMaterials);
     outMeshes.reserve(scene->mNumMeshes);
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         ProcessAIMesh(

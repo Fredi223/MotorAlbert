@@ -37,6 +37,8 @@ namespace Console
         va_start(args, fmt);
         PushFormatted(g_lines, fmt, args);
         va_end(args);
+        // Espejo en la terminal: lo que antes salia por std::cout sigue viendose ahi.
+        if (!g_lines.empty()) std::puts(g_lines.back().c_str());
     }
 
     void LogError(const char* fmt, ...)
@@ -50,6 +52,7 @@ namespace Console
         if (!tmp.empty())
         {
             std::string s = std::string("[ERR] ") + tmp[0];
+            std::fprintf(stderr, "%s\n", s.c_str());
             g_lines.push_back(std::move(s));
         }
     }

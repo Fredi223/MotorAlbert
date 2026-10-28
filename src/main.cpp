@@ -258,7 +258,7 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
 {
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
-        std::cerr << "Error inicializando SDL3: " << SDL_GetError() << std::endl;
+        Console::LogError("Error inicializando SDL3: %s", SDL_GetError());
         return false;
     }
     Console::LogInfo("SDL3 inicializado correctamente.");
@@ -278,26 +278,26 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
     );
     if (!*window)
     {
-        std::cerr << "Error creando ventana SDL3: " << SDL_GetError() << std::endl;
+        Console::LogError("Error creando ventana SDL3: %s", SDL_GetError());
         return false;
     }
-    std::cout << "Ventana creada correctamente." << std::endl;
+    Console::LogInfo("Ventana creada correctamente (%dx%d).", width, height);
 
     *context = SDL_GL_CreateContext(*window);
     if (!*context)
     {
-        std::cerr << "Error creando contexto OpenGL: " << SDL_GetError() << std::endl;
+        Console::LogError("Error creando contexto OpenGL: %s", SDL_GetError());
         return false;
     }
 
     if (!SDL_GL_SetSwapInterval(1))
     {
-        std::cerr << "Error configurando Swap Interval: " << SDL_GetError() << std::endl;
+        Console::LogError("Error configurando Swap Interval: %s", SDL_GetError());
     }
 
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress))
     {
-        std::cerr << "Error cargando funciones GLAD: " << SDL_GetError() << std::endl;
+        Console::LogError("Error cargando funciones GLAD: %s", SDL_GetError());
         return false;
     }
 
@@ -305,7 +305,8 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.2f, 0.3f, 0.4f, 1.0f);
 
-    std::cout << "OpenGL " << glGetString(GL_VERSION) << " inicializado correctamente." << std::endl;
+    Console::LogInfo("OpenGL %s inicializado correctamente (GLAD).", (const char*)glGetString(GL_VERSION));
+    Console::LogInfo("GPU: %s", (const char*)glGetString(GL_RENDERER));
 
     return true;
 }
@@ -326,7 +327,7 @@ GLuint CreateShaderProgram(const char* vertexSrc, const char* fragmentSrc)
             {
                 char info[512];
                 glGetShaderInfoLog(shader, 512, NULL, info);
-                std::cerr << " Error compilando shader: " << info << std::endl;
+                Console::LogError("Error compilando shader: %s", info);
             }
             return shader;
         };
@@ -345,7 +346,7 @@ GLuint CreateShaderProgram(const char* vertexSrc, const char* fragmentSrc)
     {
         char info[512];
         glGetProgramInfoLog(program, 512, NULL, info);
-        std::cerr << " Error linkeando shader program: " << info << std::endl;
+        Console::LogError("Error linkeando shader program: %s", info);
     }
 
     glDeleteShader(vs);
@@ -368,7 +369,7 @@ GLuint CreateNormalShaderProgram()
             {
                 char info[512];
                 glGetShaderInfoLog(shader, 512, NULL, info);
-                std::cerr << " Error compilando shader: " << info << std::endl;
+                Console::LogError("Error compilando shader: %s", info);
             }
             return shader;
         };
@@ -389,7 +390,7 @@ GLuint CreateNormalShaderProgram()
     {
         char info[512];
         glGetProgramInfoLog(program, 512, NULL, info);
-        std::cerr << " Error linkeando shader de normales: " << info << std::endl;
+        Console::LogError("Error linkeando shader de normales: %s", info);
     }
 
     glDeleteShader(vs);
@@ -617,6 +618,9 @@ int main(int argc, char* argv[])
     }
 
     Console::LogInfo("Inicializando motor - version E1");
+    Console::LogInfo("Librerias: SDL %d.%d.%d, Assimp %u.%u.%u, ImGui %s, stb_image (texturas), GLM, GLAD",
+        SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION,
+        aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision(), IMGUI_VERSION);
 
     if (g_vsync) SDL_GL_SetSwapInterval(1);
     else SDL_GL_SetSwapInterval(0);
@@ -649,6 +653,7 @@ int main(int argc, char* argv[])
 
     ImGui_ImplSDL3_InitForOpenGL(window, context);
     ImGui_ImplOpenGL3_Init("#version 460");
+    Console::LogInfo("ImGui inicializado (docking, backends SDL3 + OpenGL3)");
 
     GLuint shaderProgram = CreateShaderProgram(vertexShaderSource, fragmentShaderSource);
     GLuint normalShaderProgram = CreateNormalShaderProgram();
@@ -678,7 +683,7 @@ int main(int argc, char* argv[])
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, viewportRBO);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << " Error: el framebuffer del viewport no esta completo!" << std::endl;
+        Console::LogError("El framebuffer del viewport no esta completo");
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -1133,12 +1138,13 @@ int main(int argc, char* argv[])
                         go.texComp.textureID = tex;
                         go.texComp.path = textureFullPath;
                         go.meshComp.mesh.textureID = tex;
+                        Console::LogInfo("stb_image: textura cargada %s (%dx%d, %d canales)", textureFullPath.c_str(), w, h, channels);
                     }
                     else
                     {
                         go.texComp.textureID = checkerTexture;
                         go.texComp.path.clear();
-                        Console::LogInfo("No se pudo cargar textura desde %s", textureFullPath.c_str());
+                        Console::LogError("stb_image: no se pudo cargar la textura %s (%s); se usa la checker", textureFullPath.c_str(), stbi_failure_reason());
                     }
                 }
                 else
@@ -1150,7 +1156,7 @@ int main(int argc, char* argv[])
                 gameObjects.push_back(std::move(go));
             }
             RebuildOctree();
-            std::cout << "FBX cargado: " << filePath << std::endl;
+            Console::LogInfo("FBX cargado: %s (%zu mallas -> GameObjects)", filePath.c_str(), newMeshes.size());
         };
 
 
@@ -1188,7 +1194,7 @@ int main(int argc, char* argv[])
         LoadFbxIntoScene(bakerHouse);
     }
 
-    std::cout << " Iniciando bucle principal..." << std::endl;
+    Console::LogInfo("Iniciando bucle principal");
 
     committed = CaptureState();   // estado inicial: el primer cambio apilara este en undo
 
@@ -1216,24 +1222,21 @@ int main(int argc, char* argv[])
                 {
                     if (selectedObject >= 0 && selectedObject < static_cast<int>(gameObjects.size()))
                     {
-                        std::cout << "[H] toggle on index " << selectedObject << " / size=" << gameObjects.size() << std::endl;
-
-                        gameObjects[selectedObject].hidden = !gameObjects[selectedObject].hidden;
+                                                gameObjects[selectedObject].hidden = !gameObjects[selectedObject].hidden;
 
                         if (gameObjects[selectedObject].hidden)
                         {
-                            std::cout << gameObjects[selectedObject].name << " ocultado." << std::endl;
+                            Console::LogInfo("%s ocultado", gameObjects[selectedObject].name.c_str());
                             selectedObject = -1; 
                         }
                         else
                         {
-                            std::cout << gameObjects[selectedObject].name << " mostrado." << std::endl;
+                            Console::LogInfo("%s mostrado", gameObjects[selectedObject].name.c_str());
                         }
                     }
                     else
                     {
-                        std::cerr << "[H] Advertencia: selectedObject inválido: " << selectedObject
-                            << " (size=" << gameObjects.size() << ")" << std::endl;
+                        Console::LogError("[H] No hay ningun objeto seleccionado que ocultar");
                     }
                 }
                 else if (sc == SDL_SCANCODE_N && !io.WantTextInput)
@@ -1241,7 +1244,7 @@ int main(int argc, char* argv[])
                     Uint32 now = SDL_GetTicks();
                     if (now - lastNormalsToggleMs > NORMALS_TOGGLE_DEBOUNCE) {
                         showNormals = !showNormals;
-                        std::cout << "Mostrar normales: " << (showNormals ? "ON" : "OFF") << std::endl;
+                        Console::LogInfo("Mostrar normales: %s", showNormals ? "ON" : "OFF");
                         lastNormalsToggleMs = now;
                     }
                 }
@@ -1296,8 +1299,9 @@ int main(int argc, char* argv[])
                             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
                             glGenerateMipmap(GL_TEXTURE_2D);
                             stbi_image_free(data);
+                            Console::LogInfo("stb_image: textura cargada %s (%dx%d, %d canales)", filePath.c_str(), texWidth, texHeight, texChannels);
 
-                            if (selectedObject >= 0 && selectedObject < (int)gameObjects.size())
+                            if (selectedObject >= 0&& selectedObject < (int)gameObjects.size())
                             {
                                 const GLuint oldTex = gameObjects[selectedObject].texComp.textureID;
                                 gameObjects[selectedObject].texComp.textureID = newTex;
@@ -1317,12 +1321,12 @@ int main(int argc, char* argv[])
                             else
                             {
                                 glDeleteTextures(1, &newTex);   // nadie la va a usar
-                                std::cout << "No hay GameObjects para aplicar la textura." << std::endl;
+                                Console::LogInfo("No hay GameObjects para aplicar la textura");
                             }
                         }
                         else
                         {
-                            std::cerr << "Error cargando imagen: " << filePath << std::endl;
+                            Console::LogError("Error cargando imagen: %s (%s)", filePath.c_str(), stbi_failure_reason());
                         }
                     }
                     else if (ends_with(lower, ".fbx"))
@@ -1332,7 +1336,7 @@ int main(int argc, char* argv[])
 
                     else
                     {
-                        std::cout << "Archivo no soportado: " << filePath << std::endl;
+                        Console::LogError("Archivo no soportado: %s", filePath.c_str());
                     }
                 }
             }
@@ -2190,12 +2194,12 @@ int main(int argc, char* argv[])
             if (hitIndex != -1)
             {
                 selectedObject = hitIndex;
-                std::cout << "Seleccionado: " << gameObjects[selectedObject].name << " (index=" << selectedObject << ")\n";
+                Console::LogInfo("Seleccionado: %s (index=%d)", gameObjects[selectedObject].name.c_str(), selectedObject);
             }
             else
             {
                 selectedObject = -1;
-                std::cout << "Seleccion: ninguno\n";
+                Console::LogInfo("Seleccion: ninguno");
             }
         }
 
@@ -2242,7 +2246,7 @@ int main(int argc, char* argv[])
         // ========================================================
         // LIMPIEZA
         // ========================================================
-        std::cout << " Saliendo del bucle principal." << std::endl;
+        Console::LogInfo("Saliendo del bucle principal");
 
         for (auto& go : gameObjects) go.Destroy();
         gameObjects.clear();
