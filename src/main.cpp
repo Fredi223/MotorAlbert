@@ -1073,7 +1073,7 @@ int main(int argc, char* argv[])
                             std::cerr << "Error cargando imagen: " << filePath << std::endl;
                         }
                     }
-                    if (ends_with(lower, ".fbx"))
+                    else if (ends_with(lower, ".fbx"))
                     {
                         float fbxUnitScale = 1.0f;
                         std::vector<Mesh> newMeshes = LoadModel(filePath, &fbxUnitScale);
