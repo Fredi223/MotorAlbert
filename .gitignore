@@ -42,3 +42,6 @@ assets_legacy/
 
 # ==== Contexto de Claude Code (uso local, no se sube) ====
 CLAUDE.md
+
+# ==== Guia de entrega (solo para uso nuestro, no se sube) ====
+docs/MotoresE1_*.pdf
