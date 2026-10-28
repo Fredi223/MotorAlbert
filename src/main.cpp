@@ -1034,7 +1034,9 @@ int main(int argc, char* argv[])
                         ends_with(lower, ".jpeg") || ends_with(lower, ".tga"))
                     {
                         int texWidth, texHeight, texChannels;
-                        unsigned char* data = stbi_load(filePath.c_str(), &texWidth, &texHeight, &texChannels, 0);
+                        // Se fuerza RGBA (4 canales): una imagen de 1 o 2 canales (grises) o de 3 con ancho
+                        // no multiplo de 4 se subiria con un formato/alineacion que no le corresponde.
+                        unsigned char* data = stbi_load(filePath.c_str(), &texWidth, &texHeight, &texChannels, 4);
                         if (data)
                         {
                             GLuint newTex;
@@ -1045,8 +1047,7 @@ int main(int argc, char* argv[])
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
                             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-                            GLenum format = (texChannels == 4) ? GL_RGBA : GL_RGB;
-                            glTexImage2D(GL_TEXTURE_2D, 0, format, texWidth, texHeight, 0, format, GL_UNSIGNED_BYTE, data);
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
                             glGenerateMipmap(GL_TEXTURE_2D);
                             stbi_image_free(data);
 
@@ -1125,7 +1126,7 @@ int main(int argc, char* argv[])
                                 std::string textureFullPath = textureDir + go.meshComp.mesh.texturePath;
 
                                 int w, h, channels;
-                                unsigned char* img = stbi_load(textureFullPath.c_str(), &w, &h, &channels, 0);
+                                unsigned char* img = stbi_load(textureFullPath.c_str(), &w, &h, &channels, 4);
                                 if (img)
                                 {
                                     GLuint tex;
@@ -1136,8 +1137,7 @@ int main(int argc, char* argv[])
                                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
                                     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-                                    GLenum format = (channels == 4) ? GL_RGBA : GL_RGB;
-                                    glTexImage2D(GL_TEXTURE_2D, 0, format, w, h, 0, format, GL_UNSIGNED_BYTE, img);
+                                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
                                     glGenerateMipmap(GL_TEXTURE_2D);
                                     stbi_image_free(img);
 
