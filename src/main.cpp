@@ -268,7 +268,7 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 
     *window = SDL_CreateWindow(
-        "Motor - Carga de modelo FBX",
+        "Motor Albert",
         width, height,
         SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
     );
@@ -1203,9 +1203,9 @@ int main(int argc, char* argv[])
 
             if (ImGui::BeginMenu("Help"))
             {
-                if (ImGui::MenuItem("Documentation")) SDL_OpenURL("https://github.com/TuRepo/docs");
-                if (ImGui::MenuItem("Report Bug")) SDL_OpenURL("https://github.com/TuRepo/issues");
-                if (ImGui::MenuItem("Download Latest")) SDL_OpenURL("https://github.com/TuRepo/releases");
+                if (ImGui::MenuItem("Documentation")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/docs");
+                if (ImGui::MenuItem("Report Bug")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/issues");
+                if (ImGui::MenuItem("Download Latest")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/releases");
                 if (ImGui::MenuItem("About")) showAbout = true;
                 ImGui::EndMenu();
             }
@@ -1217,7 +1217,7 @@ int main(int argc, char* argv[])
             ImGui::Begin("About", &showAbout);
             ImGui::Text("Motor 3D v1.0");
             ImGui::Separator();
-            ImGui::Text("Autores: Albert Frederic Bailen Ruesca, ...");
+            ImGui::Text("Autores: Albert Frederic Bailen Ruesca");
             ImGui::Text("Librerias usadas: SDL3, OpenGL, ImGui, Assimp, stb_image, GLM");
             ImGui::Text("Licencia: MIT License");
             ImGui::End();
