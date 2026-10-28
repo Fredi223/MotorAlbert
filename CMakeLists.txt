@@ -40,6 +40,13 @@ add_executable(MotorAlbert
     src/UndoHistory.h
     src/DdsLoader.cpp
     src/DdsLoader.h
+    src/Editor.cpp
+    src/Editor.h
+    src/EditorCamera.cpp
+    src/PanelConfiguration.cpp
+    src/PanelHierarchy.cpp
+    src/PanelInspector.cpp
+    src/PanelViewport.cpp
     src/FrameTiming.cpp
     src/FrameTiming.h
     src/Renderer.cpp
