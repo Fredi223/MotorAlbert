@@ -1,6 +1,7 @@
 #include "Octree.h"
 #include "GameObject.h"
 #include <glad/glad.h>
+#include <algorithm>
 
 // ------------------------------------------------------------
 
@@ -118,7 +119,14 @@ void Octree::Query(const glm::vec3& qMin, const glm::vec3& qMax,
             }
         };
 
+    const size_t firstNew = results.size();
     queryNode(root);
+
+    // Un objeto que cruza el limite entre varios nodos esta insertado en cada uno de ellos
+    // (ver Insert), asi que la consulta lo devuelve repetido. Se eliminan los duplicados
+    // de lo anadido por esta consulta, sin tocar lo que el llamador ya tuviera en results.
+    std::sort(results.begin() + firstNew, results.end());
+    results.erase(std::unique(results.begin() + firstNew, results.end()), results.end());
 }
 
 // ------------------------------------------------------------
