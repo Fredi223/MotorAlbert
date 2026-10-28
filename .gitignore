@@ -39,3 +39,6 @@ imgui.ini
 # ==== Rescate de assets legacy (no forma parte del repo "en serio") ====
 # Extraidos del historico remoto V1 solo para no perderlos localmente.
 assets_legacy/
+
+# ==== Contexto de Claude Code (uso local, no se sube) ====
+CLAUDE.md
