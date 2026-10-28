@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <filesystem>
 #include <SDL3/SDL.h>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
@@ -1540,8 +1541,10 @@ int main(int argc, char* argv[])
                         ImGui::SameLine();
                         if (ImGui::Button("Open Folder")) {
                             if (!go.texComp.path.empty()) {
-                                std::string cmd = std::string("explorer /select,\"") + go.texComp.path + "\"";
-                                system(cmd.c_str());
+                                // Sin shell de por medio: una ruta con comillas o '&' no puede
+                                // inyectar comandos, como pasaba al montar la linea de explorer.
+                                const std::string dir = std::filesystem::path(go.texComp.path).parent_path().string();
+                                SDL_OpenURL(dir.c_str());
                             }
                         }
                     }
@@ -1637,11 +1640,6 @@ int main(int argc, char* argv[])
                 if (g_fpsCap < 0) g_fpsCap = 0;
 
                 ImGui::ColorEdit3("Viewport Clear Color", (float*)&g_clearColor);
-                if (ImGui::Button("Apply Clear Color")) {
-                    glBindFramebuffer(GL_FRAMEBUFFER, viewportFBO);
-                    glClearColor(g_clearColor.x, g_clearColor.y, g_clearColor.z, g_clearColor.w);
-                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-                }
 
                 ImGui::Separator();
                 ImGui::Text("Culling");
