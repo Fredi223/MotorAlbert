@@ -7,6 +7,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <utility>
+#include <algorithm>
+#include <cfloat>
 #include "stb_image.h"
 
 #include "Logger.h" 
@@ -175,6 +177,25 @@ static void ProcessAIMesh(
     // --- V�rtices ---
     mesh.vertices.reserve(ai_mesh->mNumVertices * 11);
 
+    // Si la malla no trae UV (p. ej. los exports de Unity sin mapeado), se generan por proyeccion
+    // de caja: para cada vertice se usa el plano perpendicular al eje dominante de su normal, y
+    // la textura se reparte una vez por el lado mayor de la malla. Hace falta el minimo y la
+    // extension de la malla, que se calculan antes.
+    const bool hasUVs = ai_mesh->mTextureCoords[0] != nullptr;
+    glm::vec3 posMin(FLT_MAX), posMax(-FLT_MAX);
+    if (!hasUVs)
+    {
+        for (unsigned int v = 0; v < ai_mesh->mNumVertices; ++v)
+        {
+            const glm::vec3 p = glm::vec3(nodeTransform * glm::vec4(
+                ai_mesh->mVertices[v].x, ai_mesh->mVertices[v].y, ai_mesh->mVertices[v].z, 1.0f));
+            posMin = glm::min(posMin, p);
+            posMax = glm::max(posMax, p);
+        }
+    }
+    const glm::vec3 posSize = posMax - posMin;
+    const float uvExtent = std::max(std::max(posSize.x, std::max(posSize.y, posSize.z)), 1e-6f);
+
     for (unsigned int v = 0; v < ai_mesh->mNumVertices; ++v)
     {
         // POSICI�N (con transformaci�n aplicada)
@@ -212,7 +233,15 @@ static void ProcessAIMesh(
         }
         else
         {
-            mesh.vertices.insert(mesh.vertices.end(), { 0.f, 0.f });
+            const glm::vec3 n = ai_mesh->HasNormals()
+                ? glm::vec3(ai_mesh->mNormals[v].x, ai_mesh->mNormals[v].y, ai_mesh->mNormals[v].z)
+                : glm::vec3(0.f, 1.f, 0.f);
+            const glm::vec3 a = glm::abs(n);
+            float u, w;
+            if (a.x >= a.y && a.x >= a.z) { u = (p.z - posMin.z) / uvExtent; w = (p.y - posMin.y) / uvExtent; }
+            else if (a.y >= a.z)          { u = (p.x - posMin.x) / uvExtent; w = (p.z - posMin.z) / uvExtent; }
+            else                          { u = (p.x - posMin.x) / uvExtent; w = (p.y - posMin.y) / uvExtent; }
+            mesh.vertices.insert(mesh.vertices.end(), { u, w });
         }
 
         // COLOR
@@ -259,12 +288,19 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
     {
         // UnitScaleFactor (FBX): centimetros por unidad nativa del archivo.
         // Si no hay metadata, se asume 1.0 (cm), el caso mas comun.
-        double unitScaleFactor = 1.0;
+        // Assimp guarda UnitScaleFactor como float; Get<double> falla en silencio por el tipo y
+        // dejaba siempre el valor por defecto (los modelos con otra unidad salian mal escalados).
+        float unitScaleFactor = 1.0f;
         if (scene->mMetaData)
         {
-            scene->mMetaData->Get("UnitScaleFactor", unitScaleFactor);
+            double asDouble = 0.0;
+            if (!scene->mMetaData->Get("UnitScaleFactor", unitScaleFactor) &&
+                scene->mMetaData->Get("UnitScaleFactor", asDouble))
+            {
+                unitScaleFactor = static_cast<float>(asDouble);
+            }
         }
-        *outUnitScale = static_cast<float>(unitScaleFactor) / 100.0f;
+        *outUnitScale = unitScaleFactor / 100.0f;
     }
 
     if (!scene->HasMeshes()) {

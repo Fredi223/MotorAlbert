@@ -1006,7 +1006,12 @@ int main(int argc, char* argv[])
                     std::string textureDir = (lastSlash == std::string::npos)
                         ? std::string()
                         : filePath.substr(0, lastSlash + 1);
-                    std::string textureFullPath = textureDir + go.meshComp.mesh.texturePath;
+                    // Algunos FBX guardan la ruta absoluta del PC donde se exportaron (p. ej.
+                // C:\Users\...\textures.jpg), que aqui no existe: solo se usa el nombre del archivo.
+                const std::string& storedPath = go.meshComp.mesh.texturePath;
+                const size_t nameStart = storedPath.find_last_of("/\\");
+                const std::string textureName = (nameStart == std::string::npos) ? storedPath : storedPath.substr(nameStart + 1);
+                std::string textureFullPath = textureDir + textureName;
     
                     int w, h, channels;
                     unsigned char* img = stbi_load(textureFullPath.c_str(), &w, &h, &channels, 4);
