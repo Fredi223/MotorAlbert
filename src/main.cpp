@@ -14,7 +14,6 @@
 #include "imgui_internal.h"
 
 #include <limits>
-#include <stack>
 
 #include <cfloat>
 #include "ModuleModelLoader.h"
@@ -870,9 +869,6 @@ int main(int argc, char* argv[])
             gameObjects[selectedObject].name.c_str(), orbitTarget.x, orbitTarget.y, orbitTarget.z, orbitDistance);
         };
 
-    std::stack<std::vector<GameObject>> undoStack;
-    Uint32 lastUndoTime = 0;
-
     // El octree guarda GameObject* directos a los elementos de gameObjects (std::vector por
     // valor). Cualquier insert/erase/push_back invalida esos punteros (reasigna el buffer o
     // desplaza y destruye elementos), asi que toda mutacion estructural del vector debe
@@ -957,23 +953,6 @@ int main(int argc, char* argv[])
         // ========================================================
         while (SDL_PollEvent(&e))
         {
-            // ========================================================
-            // UNDO: Ctrl + Z
-            // ========================================================
-            const bool* keys = SDL_GetKeyboardState(NULL);
-            bool ctrlPressed = (keys[SDL_SCANCODE_LCTRL] || keys[SDL_SCANCODE_RCTRL]);
-
-            if (ctrlPressed && keys[SDL_SCANCODE_Z]) {
-                Uint32 now = SDL_GetTicks();
-                if (now - lastUndoTime > 250) {
-                    if (!undoStack.empty()) {
-                        gameObjects = undoStack.top();
-                        undoStack.pop();
-                        std::cout << "Undo realizado" << std::endl;
-                    }
-                    lastUndoTime = now;
-                }
-            }
             ImGui_ImplSDL3_ProcessEvent(&e);
 
             switch (e.type)
