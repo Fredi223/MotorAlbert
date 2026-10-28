@@ -16,6 +16,8 @@ find_package(imgui CONFIG REQUIRED)
 
 add_executable(MotorAlbert
     src/main.cpp
+    src/Geometry.cpp
+    src/Geometry.h
     src/Logger.cpp
     src/Logger.h
     src/ModuleModelLoader.cpp
