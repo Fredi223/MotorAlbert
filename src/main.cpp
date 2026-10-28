@@ -943,11 +943,110 @@ int main(int argc, char* argv[])
             Console::LogInfo("Octree rebuilt (%zu objects)", gameObjects.size());
         };
 
+    // Carga un .fbx y crea un GameObject por malla. Lo usan el drag & drop y la carga inicial.
+    auto LoadFbxIntoScene = [&](const std::string& filePath)
+        {
+            float fbxUnitScale = 1.0f;
+            std::vector<Mesh> newMeshes = LoadModel(filePath, &fbxUnitScale);
+    
+            size_t currentSize = gameObjects.size();
+            for (size_t i = 0; i < newMeshes.size(); ++i)
+            {
+                GameObject go;
+         
+                size_t lastSlash = filePath.find_last_of("/\\");
+                size_t lastDot = filePath.find_last_of('.');
+                std::string baseName = filePath.substr(
+                    lastSlash == std::string::npos ? 0 : lastSlash + 1,
+                    (lastDot == std::string::npos ? filePath.size() : lastDot) - (lastSlash + 1)
+                );
+    
+                go.name = baseName + "_" + std::to_string(i + currentSize);
+                go.meshComp.mesh = std::move(newMeshes[i]);
+    
+                glm::vec3 minB, maxB;
+                if (ComputeAABBFromMesh(go.meshComp.mesh, minB, maxB)) {
+                    go.aabbMin = minB;
+                    go.aabbMax = maxB;
+                }
+                else {
+                    go.aabbMin = glm::vec3(0.0f);
+                    go.aabbMax = glm::vec3(0.0f);
+                    Console::LogInfo("Inicial AABB fallback para %s", go.name.c_str());
+                }
+    
+                go.transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
+                go.transform.rotation = glm::vec3(0.0f);
+                go.transform.scale = glm::vec3(fbxUnitScale);
+    
+                if (go.meshComp.mesh.textureID != 0)
+                {
+                    go.texComp.textureID = go.meshComp.mesh.textureID;
+                    go.texComp.path = go.meshComp.mesh.texturePath;
+                }
+                else if (!go.meshComp.mesh.texturePath.empty())
+                {
+                    // mesh.texturePath viene de Assimp tal como esta guardado en el
+                    // material del FBX: normalmente solo el nombre de archivo, sin
+                    // directorio. Se recompone contra la carpeta del .fbx soltado
+                    // (filePath), no contra el CWD del proceso.
+                    std::string textureDir = (lastSlash == std::string::npos)
+                        ? std::string()
+                        : filePath.substr(0, lastSlash + 1);
+                    std::string textureFullPath = textureDir + go.meshComp.mesh.texturePath;
+    
+                    int w, h, channels;
+                    unsigned char* img = stbi_load(textureFullPath.c_str(), &w, &h, &channels, 4);
+                    if (img)
+                    {
+                        GLuint tex;
+                        glGenTextures(1, &tex);
+                        glBindTexture(GL_TEXTURE_2D, tex);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+                        glGenerateMipmap(GL_TEXTURE_2D);
+                        stbi_image_free(img);
+    
+                        go.texComp.textureID = tex;
+                        go.texComp.path = textureFullPath;
+                        go.meshComp.mesh.textureID = tex;
+                    }
+                    else
+                    {
+                        go.texComp.textureID = checkerTexture;
+                        go.texComp.path.clear();
+                        Console::LogInfo("No se pudo cargar textura desde %s", textureFullPath.c_str());
+                    }
+                }
+                else
+                {
+                    go.texComp.textureID = checkerTexture;
+                    go.texComp.path.clear();
+                }
+    
+                gameObjects.push_back(std::move(go));
+            }
+            RebuildOctree();
+            std::cout << "FBX cargado: " << filePath << std::endl;
+        };
+
 
 
     // ========================================================
     // BUCLE PRINCIPAL
     // ========================================================
+    // Baker House se carga al arrancar desde Resources/, que vive junto al ejecutable (CMake
+    // la copia ahi al compilar): asi funciona igual desde build/ que desde la carpeta de entrega.
+    {
+        const char* basePath = SDL_GetBasePath();
+        const std::string bakerHouse = std::string(basePath ? basePath : "") + "Resources/BakerHouse.fbx";
+        LoadFbxIntoScene(bakerHouse);
+    }
+
     std::cout << " Iniciando bucle principal..." << std::endl;
 
     while (running)
@@ -1085,92 +1184,7 @@ int main(int argc, char* argv[])
                     }
                     else if (ends_with(lower, ".fbx"))
                     {
-                        float fbxUnitScale = 1.0f;
-                        std::vector<Mesh> newMeshes = LoadModel(filePath, &fbxUnitScale);
-
-                        size_t currentSize = gameObjects.size();
-                        for (size_t i = 0; i < newMeshes.size(); ++i)
-                        {
-                            GameObject go;
-                     
-                            size_t lastSlash = filePath.find_last_of("/\\");
-                            size_t lastDot = filePath.find_last_of('.');
-                            std::string baseName = filePath.substr(
-                                lastSlash == std::string::npos ? 0 : lastSlash + 1,
-                                (lastDot == std::string::npos ? filePath.size() : lastDot) - (lastSlash + 1)
-                            );
-
-                            go.name = baseName + "_" + std::to_string(i + currentSize);
-                            go.meshComp.mesh = std::move(newMeshes[i]);
-
-                            glm::vec3 minB, maxB;
-                            if (ComputeAABBFromMesh(go.meshComp.mesh, minB, maxB)) {
-                                go.aabbMin = minB;
-                                go.aabbMax = maxB;
-                            }
-                            else {
-                                go.aabbMin = glm::vec3(0.0f);
-                                go.aabbMax = glm::vec3(0.0f);
-                                Console::LogInfo("Inicial AABB fallback para %s", go.name.c_str());
-                            }
-
-                            go.transform.position = glm::vec3(0.0f, 0.0f, 0.0f);
-                            go.transform.rotation = glm::vec3(0.0f);
-                            go.transform.scale = glm::vec3(fbxUnitScale);
-
-                            if (go.meshComp.mesh.textureID != 0)
-                            {
-                                go.texComp.textureID = go.meshComp.mesh.textureID;
-                                go.texComp.path = go.meshComp.mesh.texturePath;
-                            }
-                            else if (!go.meshComp.mesh.texturePath.empty())
-                            {
-                                // mesh.texturePath viene de Assimp tal como esta guardado en el
-                                // material del FBX: normalmente solo el nombre de archivo, sin
-                                // directorio. Se recompone contra la carpeta del .fbx soltado
-                                // (filePath), no contra el CWD del proceso.
-                                std::string textureDir = (lastSlash == std::string::npos)
-                                    ? std::string()
-                                    : filePath.substr(0, lastSlash + 1);
-                                std::string textureFullPath = textureDir + go.meshComp.mesh.texturePath;
-
-                                int w, h, channels;
-                                unsigned char* img = stbi_load(textureFullPath.c_str(), &w, &h, &channels, 4);
-                                if (img)
-                                {
-                                    GLuint tex;
-                                    glGenTextures(1, &tex);
-                                    glBindTexture(GL_TEXTURE_2D, tex);
-                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-                                    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-                                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
-                                    glGenerateMipmap(GL_TEXTURE_2D);
-                                    stbi_image_free(img);
-
-                                    go.texComp.textureID = tex;
-                                    go.texComp.path = textureFullPath;
-                                    go.meshComp.mesh.textureID = tex;
-                                }
-                                else
-                                {
-                                    go.texComp.textureID = checkerTexture;
-                                    go.texComp.path.clear();
-                                    Console::LogInfo("No se pudo cargar textura desde %s", textureFullPath.c_str());
-                                }
-                            }
-                            else
-                            {
-                                go.texComp.textureID = checkerTexture;
-                                go.texComp.path.clear();
-                            }
-
-                            gameObjects.push_back(std::move(go));
-                        }
-                        RebuildOctree();
-                        std::cout << "FBX cargado: " << filePath << std::endl;
+                        LoadFbxIntoScene(filePath);
                     }
 
                     else

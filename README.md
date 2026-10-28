@@ -57,7 +57,7 @@ selección de objetos por raycast y frustum culling acelerado con un octree.
 ```
 src/            Código fuente del motor
 src/vendor/     Dependencias que no vienen de vcpkg (GLAD, generado para GL 4.6 Core)
-assets/         Assets de prueba versionados (drag & drop)
+Resources/      Recursos versionados (BakerHouse.fbx y su textura); se copian junto al .exe
 docs/           Material de la asignatura
 CMakeLists.txt, vcpkg.json, CMakePresets.json   Buildsystem
 ```
