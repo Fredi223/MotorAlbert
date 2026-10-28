@@ -880,14 +880,115 @@ int main(int argc, char* argv[])
     // marcar este flag; el bucle principal reconstruye el octree antes de volver a usarlo.
     bool sceneStructureDirty = false;
 
+    // --- Undo/Redo por snapshots de la escena ---
+    // Un SceneState es una copia de los GameObject SOLO con datos de CPU (vertices, indices,
+    // transform...): los handles de GL de las mallas se ponen a 0, de modo que ningun snapshot
+    // posee buffers de GPU y al restaurar se regeneran con SetupMesh (igual que en Duplicate).
+    // Las texturas si se comparten por handle, asi que ReleaseTextureIfUnused tambien mira el
+    // historial: una textura no se borra mientras algun snapshot pueda volver a necesitarla.
+    struct SceneState {
+        std::vector<GameObject> objects;
+        std::vector<GLuint> meshIds;   // VAO que tenia cada objeto vivo al capturar: identidad de la malla
+        int selected = -1;
+    };
+    const size_t UNDO_LIMIT = 30;
+    std::deque<SceneState> undoStack, redoStack;
+    SceneState committed;              // ultimo estado ya confirmado; se apila en undo al cambiar la escena
+    bool wantUndo = false, wantRedo = false;
+
     // Una textura puede estar compartida entre varios objetos (duplicados): solo se libera
     // cuando ningun GameObject la usa ya, y nunca la checker, que es global. Hay que llamarla
     // DESPUES de haber quitado la textura del objeto que la dejaba, o ese objeto la seguiria contando.
     auto ReleaseTextureIfUnused = [&](GLuint tex) {
         if (tex == 0 || tex == checkerTexture) return;
-        const bool inUse = std::any_of(gameObjects.begin(), gameObjects.end(),
-            [tex](const GameObject& o) { return o.texComp.textureID == tex; });
+        auto usesTex = [tex](const GameObject& o) { return o.texComp.textureID == tex; };
+        auto stateUsesTex = [&](const SceneState& s) { return std::any_of(s.objects.begin(), s.objects.end(), usesTex); };
+        const bool inUse = std::any_of(gameObjects.begin(), gameObjects.end(), usesTex)
+            || stateUsesTex(committed)
+            || std::any_of(undoStack.begin(), undoStack.end(), stateUsesTex)
+            || std::any_of(redoStack.begin(), redoStack.end(), stateUsesTex);
         if (!inUse) glDeleteTextures(1, &tex);
+        };
+
+    auto CaptureState = [&]() {
+        SceneState s;
+        s.objects = gameObjects;
+        for (GameObject& o : s.objects) {
+            Mesh& m = o.meshComp.mesh;
+            s.meshIds.push_back(m.VAO);
+            m.VAO = m.VBO = m.EBO = 0;
+            m.faceNormalVAO = m.faceNormalVBO = 0;
+            m.faceNormalCount = 0;
+        }
+        s.selected = selectedObject;
+        return s;
+        };
+
+    // Compara la escena viva con el ultimo estado confirmado (la seleccion no cuenta).
+    auto SceneMatches = [&](const SceneState& s) {
+        if (s.objects.size() != gameObjects.size()) return false;
+        for (size_t i = 0; i < gameObjects.size(); ++i) {
+            const GameObject& a = s.objects[i];
+            const GameObject& b = gameObjects[i];
+            if (s.meshIds[i] != b.meshComp.mesh.VAO || a.name != b.name || a.hidden != b.hidden ||
+                a.normalsMode != b.normalsMode || a.showFaceNormals != b.showFaceNormals ||
+                a.texComp.textureID != b.texComp.textureID || a.texComp.path != b.texComp.path ||
+                a.transform.position != b.transform.position ||
+                a.transform.rotation != b.transform.rotation ||
+                a.transform.scale != b.transform.scale)
+                return false;
+        }
+        return true;
+        };
+
+    // Sustituye la escena viva por el estado dado (que se consume).
+    auto ApplyState = [&](SceneState& s) {
+        for (GameObject& o : gameObjects) o.Destroy();
+        gameObjects = std::move(s.objects);
+        for (GameObject& o : gameObjects) o.meshComp.mesh.SetupMesh();
+        selectedObject = (s.selected >= 0 && s.selected < (int)gameObjects.size()) ? s.selected : -1;
+        sceneStructureDirty = true;
+        committed = CaptureState();   // refresca los VAO nuevos y evita registrar la restauracion como cambio
+        };
+
+    // Llamar una vez por frame, con la UI ya construida. Los cambios se agrupan: mientras haya un
+    // widget activo (arrastrar un DragFloat, escribir un nombre) no se confirma nada, asi un
+    // arrastre entero es un solo paso de undo.
+    auto UpdateUndoHistory = [&]() {
+        const bool canEdit = !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput;
+
+        if (canEdit && wantUndo && !undoStack.empty()) {
+            SceneState target = std::move(undoStack.back());
+            undoStack.pop_back();
+            redoStack.push_back(std::move(committed));
+            ApplyState(target);
+        }
+        else if (canEdit && wantRedo && !redoStack.empty()) {
+            SceneState target = std::move(redoStack.back());
+            redoStack.pop_back();
+            undoStack.push_back(std::move(committed));
+            ApplyState(target);
+        }
+        wantUndo = wantRedo = false;
+
+        if (SceneMatches(committed)) {
+            committed.selected = selectedObject;   // la seleccion previa al cambio es la que se recupera al deshacer
+            return;
+        }
+        if (!ImGui::IsAnyItemActive()) {
+            std::vector<SceneState> discarded;
+            undoStack.push_back(std::move(committed));
+            while (undoStack.size() > UNDO_LIMIT) {
+                discarded.push_back(std::move(undoStack.front()));
+                undoStack.pop_front();
+            }
+            for (SceneState& s : redoStack) discarded.push_back(std::move(s));
+            redoStack.clear();
+            committed = CaptureState();
+            for (const SceneState& s : discarded)
+                for (const GameObject& o : s.objects)
+                    ReleaseTextureIfUnused(o.texComp.textureID);
+        }
         };
 
     auto DuplicateGameObject = [&](std::vector<GameObject>& list, int index) -> int {
@@ -1089,6 +1190,8 @@ int main(int argc, char* argv[])
 
     std::cout << " Iniciando bucle principal..." << std::endl;
 
+    committed = CaptureState();   // estado inicial: el primer cambio apilara este en undo
+
     while (running)
     {
         // ========================================================
@@ -1251,6 +1354,13 @@ int main(int argc, char* argv[])
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::MenuItem("Exit")) running = false;
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("Edit"))
+            {
+                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !undoStack.empty())) wantUndo = true;
+                if (ImGui::MenuItem("Redo", "Ctrl+Y", false, !redoStack.empty())) wantRedo = true;
                 ImGui::EndMenu();
             }
 
@@ -1923,6 +2033,16 @@ int main(int argc, char* argv[])
 
         // Reconstruir el octree justo aqui (y no al final del frame): el panel Viewport, mas
         // abajo, hace picking consultando el octree en este mismo frame.
+        {
+            const ImGuiIO& uio = ImGui::GetIO();
+            if (uio.KeyCtrl && !uio.WantTextInput)
+            {
+                if (ImGui::IsKeyPressed(ImGuiKey_Z)) { if (uio.KeyShift) wantRedo = true; else wantUndo = true; }
+                else if (ImGui::IsKeyPressed(ImGuiKey_Y)) wantRedo = true;
+            }
+            UpdateUndoHistory();
+        }
+
         if (sceneStructureDirty)
         {
             RebuildOctree();
