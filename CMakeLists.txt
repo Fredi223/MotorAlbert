@@ -24,6 +24,8 @@ add_executable(MotorAlbert
     src/Octree.h
     src/Primitives.cpp
     src/Primitives.h
+    src/SystemInfo.cpp
+    src/SystemInfo.h
     src/GameObject.h
     src/Transform.h
     src/stb_image.h
@@ -44,6 +46,10 @@ target_link_libraries(MotorAlbert PRIVATE
     assimp::assimp
     imgui::imgui
 )
+
+if(WIN32)
+    target_link_libraries(MotorAlbert PRIVATE psapi)   # GetProcessMemoryInfo
+endif()
 
 # Resources/ se copia junto al ejecutable: el motor la busca ahi (SDL_GetBasePath), tanto en
 # build/ como en la carpeta de entrega. Es un target propio (y no un POST_BUILD del ejecutable)

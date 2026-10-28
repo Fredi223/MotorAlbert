@@ -20,6 +20,7 @@
 #include "ModuleModelLoader.h"
 #include "GameObject.h"
 #include "Primitives.h"
+#include "SystemInfo.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -201,7 +202,7 @@ const float NORMAL_LENGTH_PERCENT = 0.03f; // % de la diagonal del AABB local de
 
 // --- Cámara orbital (Alt + click izquierdo) ---
 const float CAMERA_FOV_DEG = 60.0f;             // FOV vertical; lo usan la proyección y el encuadre (F)
-const float ORBIT_ZOOM_STEP = 0.1f;             // fracción de distance por muesca de rueda
+float orbitZoomStep = 0.1f;             // fracción de distance por muesca de rueda
 const float ORBIT_MIN_RADIUS_FACTOR = 0.75f;    // distancia mínima = factor * radio del objeto...
 const float ORBIT_MIN_DISTANCE_FLOOR = 0.25f;   // ...con este suelo si no hay objeto
 const float ORBIT_MAX_DISTANCE = 90.0f;         // el far plane está en 100
@@ -1511,7 +1512,7 @@ int main(int argc, char* argv[])
                 orbitDistance = glm::length(cameraPos - orbitTarget);
             }
             float oldDistance = orbitDistance;
-            float newDistance = oldDistance * std::pow(1.0f - ORBIT_ZOOM_STEP, wheelDelta);
+            float newDistance = oldDistance * std::pow(1.0f - orbitZoomStep, wheelDelta);
             // Sin atravesar el objeto ni salir del far plane, pero sin atrapar a una
             // cámara que ya está fuera de ese rango: solo se limita el sentido que empeora.
             if (newDistance < oldDistance)
@@ -1828,6 +1829,78 @@ int main(int argc, char* argv[])
 
                 ImGui::Checkbox("Enable Frustum Culling", &g_enableFrustumCulling);
 
+            }
+
+            // --- Input / camara ---
+            if (ImGui::CollapsingHeader("Input / Camera")) {
+                ImGui::DragFloat("Move speed (units/s)", &cameraSpeed, 0.1f, 0.1f, 100.0f);
+                ImGui::DragFloat("Mouse sensitivity", &mouseSensitivity, 0.005f, 0.01f, 1.0f);
+                ImGui::DragFloat("Zoom step (wheel)", &orbitZoomStep, 0.005f, 0.01f, 0.5f);
+                ImGui::Text("Sprint (Shift): x%.1f", CAMERA_SPRINT_MULTIPLIER);
+                ImGui::Text("Camera: (%.2f, %.2f, %.2f)  yaw %.1f  pitch %.1f",
+                    cameraPos.x, cameraPos.y, cameraPos.z, yaw, pitch);
+            }
+
+            // --- Texturas ---
+            if (ImGui::CollapsingHeader("Textures")) {
+                static int texFilter = 0;   // 0 = linear + mipmaps, 1 = nearest
+                static int texWrap = 0;     // 0 = repeat, 1 = clamp, 2 = mirrored repeat
+                const char* filters[] = { "Linear + mipmaps", "Nearest" };
+                const char* wraps[] = { "Repeat", "Clamp to edge", "Mirrored repeat" };
+                const bool filterChanged = ImGui::Combo("Filter", &texFilter, filters, IM_ARRAYSIZE(filters));
+                const bool wrapChanged = ImGui::Combo("Wrap", &texWrap, wraps, IM_ARRAYSIZE(wraps));
+                ImGui::TextDisabled("Se aplica a las texturas ya cargadas");
+
+                std::vector<GLuint> texIds{ checkerTexture };
+                for (const GameObject& o : gameObjects)
+                    if (o.texComp.textureID != 0) texIds.push_back(o.texComp.textureID);
+                std::sort(texIds.begin(), texIds.end());
+                texIds.erase(std::unique(texIds.begin(), texIds.end()), texIds.end());
+
+                if (filterChanged || wrapChanged) {
+                    const GLint minF = texFilter == 0 ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
+                    const GLint magF = texFilter == 0 ? GL_LINEAR : GL_NEAREST;
+                    const GLint wrap = texWrap == 0 ? GL_REPEAT : (texWrap == 1 ? GL_CLAMP_TO_EDGE : GL_MIRRORED_REPEAT);
+                    for (GLuint t : texIds) {
+                        glTextureParameteri(t, GL_TEXTURE_MIN_FILTER, minF);
+                        glTextureParameteri(t, GL_TEXTURE_MAG_FILTER, magF);
+                        glTextureParameteri(t, GL_TEXTURE_WRAP_S, wrap);
+                        glTextureParameteri(t, GL_TEXTURE_WRAP_T, wrap);
+                    }
+                    Console::LogInfo("Texturas: filtro=%s, wrap=%s (%zu texturas)", filters[texFilter], wraps[texWrap], texIds.size());
+                }
+
+                // Estimacion de VRAM: RGBA8 (4 B/pixel) + ~1/3 extra de la cadena de mipmaps.
+                double texBytes = 0.0;
+                for (GLuint t : texIds) {
+                    GLint w = 0, h = 0;
+                    glGetTextureLevelParameteriv(t, 0, GL_TEXTURE_WIDTH, &w);
+                    glGetTextureLevelParameteriv(t, 0, GL_TEXTURE_HEIGHT, &h);
+                    texBytes += double(w) * h * 4.0 * (4.0 / 3.0);
+                }
+                ImGui::Text("Loaded textures: %zu (~%.2f MB)", texIds.size(), texBytes / (1024.0 * 1024.0));
+            }
+
+            // --- Memoria ---
+            if (ImGui::CollapsingHeader("Memory", ImGuiTreeNodeFlags_DefaultOpen)) {
+                size_t workingSet = 0, privateBytes = 0;
+                if (SystemInfo::GetProcessMemory(workingSet, privateBytes)) {
+                    ImGui::Text("Process RAM (working set): %.1f MB", workingSet / (1024.0 * 1024.0));
+                    ImGui::Text("Process committed (private): %.1f MB", privateBytes / (1024.0 * 1024.0));
+                }
+                else {
+                    ImGui::TextDisabled("Process memory: not available on this platform");
+                }
+
+                size_t vertexCount = 0, indexCount = 0, meshBytes = 0;
+                for (const GameObject& o : gameObjects) {
+                    const Mesh& m = o.meshComp.mesh;
+                    vertexCount += m.vertexCount;
+                    indexCount += m.indexCount;
+                    meshBytes += m.vertices.size() * sizeof(float) + m.indices.size() * sizeof(unsigned int);
+                }
+                ImGui::Text("Scene: %zu objects, %zu vertices, %zu indices", gameObjects.size(), vertexCount, indexCount);
+                ImGui::Text("Mesh data: %.2f MB (CPU, same size on GPU)", meshBytes / (1024.0 * 1024.0));
             }
 
             // --- Performance / graphs ---
