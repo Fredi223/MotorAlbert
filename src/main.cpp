@@ -1230,6 +1230,7 @@ int main(int argc, char* argv[])
                 ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy);
                 ImGui::MenuItem("Configuration", nullptr, &showConfig);
                 ImGui::MenuItem("Normals", nullptr, &showNormals);
+                ImGui::MenuItem("About", nullptr, &showAbout);
                 ImGui::EndMenu();
             }
 
@@ -1238,7 +1239,7 @@ int main(int argc, char* argv[])
                 if (ImGui::MenuItem("Documentation")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/docs");
                 if (ImGui::MenuItem("Report Bug")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/issues");
                 if (ImGui::MenuItem("Download Latest")) SDL_OpenURL("https://github.com/Fredi223/MotorAlbert/releases");
-                if (ImGui::MenuItem("About")) showAbout = true;
+                if (ImGui::MenuItem("About", nullptr, &showAbout)) {}
                 ImGui::EndMenu();
             }
 
@@ -1247,7 +1248,7 @@ int main(int argc, char* argv[])
         if (showAbout)
         {
             ImGui::Begin("About", &showAbout);
-            ImGui::Text("Motor 3D v1.0");
+            ImGui::Text("Motor Albert v1.0");
             ImGui::Separator();
             ImGui::Text("Autores: Albert Frederic Bailen Ruesca");
             ImGui::Text("Librerias usadas: SDL3, OpenGL, ImGui, Assimp, stb_image, GLM");
