@@ -51,6 +51,7 @@ add_executable(MotorAlbert
     src/FrameTiming.h
     src/Renderer.cpp
     src/Renderer.h
+    src/GameObject.cpp
     src/GameObject.h
     src/Transform.h
     src/stb_image.h

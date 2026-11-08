@@ -61,7 +61,7 @@ void Editor::DrawViewport()
         glm::vec3 rayOrigin = camera.position;
 
         float closestDistance = std::numeric_limits<float>::max();
-        int hitIndex = -1;
+        GameObject* hit = nullptr;
 
         // Candidatos: los objetos de las hojas del octree que toca la caja que envuelve el rayo.
         const glm::vec3 rayEnd = rayOrigin + rayDir * 10000.0f;
@@ -71,8 +71,7 @@ void Editor::DrawViewport()
         for (GameObject* goPtr : candidates)
         {
             GameObject& go = *goPtr;
-            int i = int(&go - &scene.objects[0]);
-            if (go.hidden || !go.meshComp.mesh || go.meshComp.mesh->vertices.empty()) continue;
+            if (go.IsHiddenInHierarchy() || !go.HasMesh() || go.meshComp.mesh->vertices.empty()) continue;
 
             float tHit = 0.0f;
 
@@ -96,18 +95,19 @@ void Editor::DrawViewport()
             if (tHit > 0.0f && tHit < closestDistance)
             {
                 closestDistance = tHit;
-                hitIndex = i;
+                hit = goPtr;
             }
         }
 
-        if (hitIndex != -1)
+        if (hit)
         {
-            selectedObject = hitIndex;
-            Console::LogInfo("Seleccionado: %s (index=%d)", scene.objects[selectedObject].name.c_str(), selectedObject);
+            selectedObject = hit;
+            revealSelection = true;   // la Hierarchy despliega sus padres
+            Console::LogInfo("Seleccionado: %s", hit->name.c_str());
         }
         else
         {
-            selectedObject = -1;
+            selectedObject = nullptr;
             Console::LogInfo("Seleccion: ninguno");
         }
     }

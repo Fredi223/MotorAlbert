@@ -1,59 +1,51 @@
 #include "UndoHistory.h"
 
 #include <algorithm>
+#include <unordered_map>
 #include <imgui.h>
 
 #include "Scene.h"
 
-void UndoHistory::Reset(const Scene& scene, int selected)
+void UndoHistory::Reset(const Scene& scene, const GameObject* selected)
 {
     committed = Capture(scene, selected);
 }
 
-UndoHistory::SceneState UndoHistory::Capture(const Scene& scene, int selected)
+UndoHistory::SceneState UndoHistory::Capture(const Scene& scene, const GameObject* selected)
 {
     SceneState s;
-    s.objects = scene.objects;
-    s.selected = selected;
+    scene.ForEach([&s](const GameObject& go) {
+        s.objects.push_back({ go, go.parent ? go.parent->uid : 0 });
+    });
+    s.selectedUid = selected ? selected->uid : 0;
     return s;
 }
 
-// Compara la escena viva con un estado guardado (la seleccion no cuenta).
-bool UndoHistory::Matches(const SceneState& s, const Scene& scene)
-{
-    const std::vector<GameObject>& objects = scene.objects;
-    if (s.objects.size() != objects.size()) return false;
-    for (size_t i = 0; i < objects.size(); ++i) {
-        const GameObject& a = s.objects[i];
-        const GameObject& b = objects[i];
-        if (a.meshComp.mesh != b.meshComp.mesh || a.name != b.name || a.hidden != b.hidden ||
-            a.normalsMode != b.normalsMode || a.showFaceNormals != b.showFaceNormals ||
-            a.texComp.textureID != b.texComp.textureID || a.texComp.path != b.texComp.path ||
-            a.transform.position != b.transform.position ||
-            a.transform.rotation != b.transform.rotation ||
-            a.transform.scale != b.transform.scale)
-            return false;
-    }
-    return true;
-}
-
 // Sustituye la escena viva por el estado dado (que se consume).
-void UndoHistory::Apply(SceneState& s, Scene& scene, int& selected)
+void UndoHistory::Apply(SceneState& s, Scene& scene, GameObject*& selected)
 {
-    scene.objects = std::move(s.objects);
-    selected = (s.selected >= 0 && s.selected < (int)scene.objects.size()) ? s.selected : -1;
+    scene.Clear();
+
+    // Preorden: el padre de cada objeto ya esta creado cuando llega el objeto.
+    std::unordered_map<uint64_t, GameObject*> byUid{ { 0, &scene.root } };
+    for (ObjectState& state : s.objects)
+    {
+        auto go = std::make_unique<GameObject>();
+        static_cast<GameObjectData&>(*go) = std::move(state.data);
+        GameObject* parent = byUid.at(state.parentUid);
+        go->parent = parent;
+        byUid[go->uid] = go.get();
+        parent->children.push_back(std::move(go));
+    }
+    scene.UpdateTransforms();
+
+    const auto sel = byUid.find(s.selectedUid);
+    selected = (s.selectedUid != 0 && sel != byUid.end()) ? sel->second : nullptr;
     scene.structureDirty = true;
     committed = Capture(scene, selected);   // evita registrar la restauracion como un cambio
 }
 
-void UndoHistory::Clear()
-{
-    undoStack.clear();
-    redoStack.clear();
-    committed = SceneState{};
-}
-
-void UndoHistory::Update(Scene& scene, int& selected)
+void UndoHistory::Update(Scene& scene, GameObject*& selected)
 {
     const bool canEdit = !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput;
 
@@ -71,8 +63,9 @@ void UndoHistory::Update(Scene& scene, int& selected)
     }
     wantUndo = wantRedo = false;
 
-    if (Matches(committed, scene)) {
-        committed.selected = selected;   // la seleccion previa al cambio es la que se recupera al deshacer
+    SceneState current = Capture(scene, selected);
+    if (current.objects == committed.objects) {
+        committed.selectedUid = current.selectedUid;   // la seleccion previa al cambio es la que se recupera al deshacer
         return;
     }
     if (!ImGui::IsAnyItemActive()) {
@@ -84,19 +77,26 @@ void UndoHistory::Update(Scene& scene, int& selected)
         }
         for (SceneState& s : redoStack) discarded.push_back(std::move(s));
         redoStack.clear();
-        committed = Capture(scene, selected);
+        committed = std::move(current);
         // Los estados descartados ya no estan en el historial, asi que UsesTexture no los cuenta.
         for (const SceneState& s : discarded)
-            for (const GameObject& o : s.objects)
-                scene.ReleaseTextureIfUnused(o.texComp.textureID);
+            for (const ObjectState& o : s.objects)
+                scene.ReleaseTextureIfUnused(o.data.texComp.textureID);
     }
 }
 
 bool UndoHistory::UsesTexture(GLuint tex) const
 {
-    auto usesTex = [tex](const GameObject& o) { return o.texComp.textureID == tex; };
+    auto usesTex = [tex](const ObjectState& o) { return o.data.texComp.textureID == tex; };
     auto stateUsesTex = [&](const SceneState& s) { return std::any_of(s.objects.begin(), s.objects.end(), usesTex); };
     return stateUsesTex(committed)
         || std::any_of(undoStack.begin(), undoStack.end(), stateUsesTex)
         || std::any_of(redoStack.begin(), redoStack.end(), stateUsesTex);
+}
+
+void UndoHistory::Clear()
+{
+    undoStack.clear();
+    redoStack.clear();
+    committed = SceneState{};
 }

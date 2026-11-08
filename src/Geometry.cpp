@@ -79,39 +79,6 @@ bool AABBInsideFrustum(const Frustum& f,
     return true;
 }
 
-void ComputeSceneAABB(const std::vector<GameObject>& objects,
-    glm::vec3& outMin, glm::vec3& outMax)
-{
-    outMin = glm::vec3(FLT_MAX);
-    outMax = glm::vec3(-FLT_MAX);
-
-    for (const auto& go : objects)
-    {
-        glm::mat4 m = go.transform.GetMatrix();
-
-        glm::vec3 corners[8] = {
-            {go.aabbMin.x, go.aabbMin.y, go.aabbMin.z},
-            {go.aabbMax.x, go.aabbMin.y, go.aabbMin.z},
-            {go.aabbMin.x, go.aabbMax.y, go.aabbMin.z},
-            {go.aabbMax.x, go.aabbMax.y, go.aabbMin.z},
-            {go.aabbMin.x, go.aabbMin.y, go.aabbMax.z},
-            {go.aabbMax.x, go.aabbMin.y, go.aabbMax.z},
-            {go.aabbMin.x, go.aabbMax.y, go.aabbMax.z},
-            {go.aabbMax.x, go.aabbMax.y, go.aabbMax.z}
-        };
-
-        for (int i = 0; i < 8; ++i)
-        {
-            glm::vec3 w = glm::vec3(m * glm::vec4(corners[i], 1.0f));
-            outMin = glm::min(outMin, w);
-            outMax = glm::max(outMax, w);
-        }
-    }
-    glm::vec3 size = outMax - outMin;
-    outMin -= size * 0.1f;
-    outMax += size * 0.1f;
-}
-
 // ============================================================
 // CONVERTIR POSICIÓN DE RATÓN A RAYO EN ESPACIO MUNDIAL
 // ============================================================

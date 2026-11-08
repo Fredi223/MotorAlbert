@@ -90,8 +90,9 @@ void Editor::DrawConfiguration()
             ImGui::TextDisabled("Se aplica a las texturas ya cargadas");
 
             std::vector<GLuint> texIds{ renderer.GetCheckerTexture() };
-            for (const GameObject& o : scene.objects)
+            scene.ForEach([&texIds](const GameObject& o) {
                 if (o.texComp.textureID != 0) texIds.push_back(o.texComp.textureID);
+            });
             std::sort(texIds.begin(), texIds.end());
             texIds.erase(std::unique(texIds.begin(), texIds.end()), texIds.end());
 
@@ -130,15 +131,23 @@ void Editor::DrawConfiguration()
                 ImGui::TextDisabled("Process memory: not available on this platform");
             }
 
+            // Las mallas compartidas (duplicados) se cuentan una vez: estan una sola vez en memoria.
+            size_t objectCount = 0;
+            std::vector<const Mesh*> meshes;
+            scene.ForEach([&](const GameObject& o) {
+                ++objectCount;
+                if (o.HasMesh()) meshes.push_back(o.meshComp.mesh.get());
+            });
+            std::sort(meshes.begin(), meshes.end());
+            meshes.erase(std::unique(meshes.begin(), meshes.end()), meshes.end());
+
             size_t vertexCount = 0, indexCount = 0, meshBytes = 0;
-            for (const GameObject& o : scene.objects) {
-                if (!o.meshComp.mesh) continue;
-                const Mesh& m = *o.meshComp.mesh;
-                vertexCount += m.vertexCount;
-                indexCount += m.indexCount;
-                meshBytes += m.vertices.size() * sizeof(float) + m.indices.size() * sizeof(unsigned int);
+            for (const Mesh* m : meshes) {
+                vertexCount += m->vertexCount;
+                indexCount += m->indexCount;
+                meshBytes += m->vertices.size() * sizeof(float) + m->indices.size() * sizeof(unsigned int);
             }
-            ImGui::Text("Scene: %zu objects, %zu vertices, %zu indices", scene.objects.size(), vertexCount, indexCount);
+            ImGui::Text("Scene: %zu objects, %zu meshes, %zu vertices, %zu indices", objectCount, meshes.size(), vertexCount, indexCount);
             ImGui::Text("Mesh data: %.2f MB (CPU, same size on GPU)", meshBytes / (1024.0 * 1024.0));
         }
 

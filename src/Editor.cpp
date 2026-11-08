@@ -73,18 +73,18 @@ void Editor::ProcessEvent(const SDL_Event& e)
         }
         else if (sc == SDL_SCANCODE_H && !io.WantTextInput)
         {
-            if (selectedObject >= 0 && selectedObject < static_cast<int>(scene.objects.size()))
+            if (selectedObject)
             {
-                scene.objects[selectedObject].hidden = !scene.objects[selectedObject].hidden;
+                selectedObject->hidden = !selectedObject->hidden;
 
-                if (scene.objects[selectedObject].hidden)
+                if (selectedObject->hidden)
                 {
-                    Console::LogInfo("%s ocultado", scene.objects[selectedObject].name.c_str());
-                    selectedObject = -1;
+                    Console::LogInfo("%s ocultado (con sus hijos)", selectedObject->name.c_str());
+                    selectedObject = nullptr;
                 }
                 else
                 {
-                    Console::LogInfo("%s mostrado", scene.objects[selectedObject].name.c_str());
+                    Console::LogInfo("%s mostrado", selectedObject->name.c_str());
                 }
             }
             else
@@ -138,7 +138,7 @@ void Editor::ProcessEvent(const SDL_Event& e)
             }
             else if (lower.ends_with(".fbx"))
             {
-                scene.LoadFbx(filePath);
+                if (GameObject* model = scene.LoadFbx(filePath)) selectedObject = model;
             }
             else
             {
@@ -167,6 +167,8 @@ void Editor::DrawFrame()
     DrawInspector();
     DrawConfiguration();
 
+    // Matrices de mundo al dia con lo editado este frame (Inspector) antes de dibujar.
+    scene.UpdateTransforms();
     drawnCount = renderer.Render(scene, view, projection);
 
     Console::DrawConsole("Console", &showConsole);
@@ -241,6 +243,13 @@ void Editor::DrawMainMenuBar()
 
         if (ImGui::BeginMenu("GameObject"))
         {
+            if (ImGui::MenuItem("Create Empty")) selectedObject = scene.CreateEmpty("GameObject");
+            if (ImGui::MenuItem("Create Empty Child", nullptr, false, selectedObject != nullptr))
+            {
+                selectedObject = scene.CreateEmpty("GameObject", selectedObject);
+                revealSelection = true;
+            }
+            ImGui::Separator();
             if (ImGui::BeginMenu("3D Object"))
             {
                 if (ImGui::MenuItem("Cube")) selectedObject = scene.AddPrimitive("Cube", CreateCubeMesh());
@@ -322,20 +331,20 @@ void Editor::DrawDockspace()
 }
 
 // Aplica una textura recien cargada (PNG/JPG/TGA/DDS soltada en la ventana) al objeto
-// seleccionado, o al primero si no hay seleccion. Si no hay objetos, la libera.
+// seleccionado si tiene malla, o al primero con malla si no. Si no hay ninguno, la libera.
 void Editor::AssignDroppedTexture(GLuint newTex, const std::string& filePath)
 {
-    int target = -1;
-    if (selectedObject >= 0 && selectedObject < (int)scene.objects.size()) target = selectedObject;
-    else if (!scene.objects.empty()) target = 0;
+    GameObject* target = (selectedObject && selectedObject->HasMesh()) ? selectedObject : nullptr;
+    if (!target)
+        scene.ForEach([&target](GameObject& o) { if (!target && o.HasMesh()) target = &o; });
 
-    if (target < 0)
+    if (!target)
     {
         glDeleteTextures(1, &newTex);   // nadie la va a usar
-        Console::LogInfo("No hay GameObjects para aplicar la textura");
+        Console::LogInfo("No hay GameObjects con malla para aplicar la textura");
         return;
     }
-    GameObject& go = scene.objects[target];
+    GameObject& go = *target;
     const GLuint oldTex = go.texComp.textureID;
     go.texComp.textureID = newTex;
     go.texComp.path = filePath;

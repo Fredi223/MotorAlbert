@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <SDL3/SDL.h>
@@ -11,6 +12,7 @@ class FrameTiming;
 class Renderer;
 class Scene;
 class UndoHistory;
+struct GameObject;
 
 // Editor del motor: la interfaz de ImGui (menu, paneles, viewport), la camara del editor, la
 // seleccion y el input. Usa el motor (Scene, Renderer, FrameTiming) pero el motor no sabe nada de el.
@@ -58,6 +60,21 @@ private:
     void DrawHierarchy();
     void DrawViewport();
 
+    // --- PanelHierarchy.cpp ---
+    // Lo que se pide al dibujar el arbol se aplica al terminar de recorrerlo (borrar o mover
+    // objetos en mitad del recorrido invalidaria los iteradores de children).
+    struct HierarchyOps {
+        GameObject* toDelete = nullptr;
+        GameObject* toDuplicate = nullptr;
+        GameObject* createChildOf = nullptr;
+        uint64_t reparentUid = 0;           // 0 = nada que reparentar
+        GameObject* reparentTo = nullptr;   // nullptr = primer nivel
+    };
+    void DrawHierarchyNode(GameObject& go, HierarchyOps& ops);
+    void BeginRename(const GameObject& go);
+    // Borra el objeto y su rama, soltando antes la seleccion si estaba dentro.
+    void DeleteObject(GameObject* go);
+
     // Motor
     SDL_Window* window;
     Scene& scene;
@@ -72,7 +89,10 @@ private:
     glm::mat4 view = glm::mat4(1.0f);
     glm::mat4 projection = glm::mat4(1.0f);
 
-    int selectedObject = -1;
+    // Seleccion. Las direcciones de los GameObject son estables; quien borra o sustituye objetos
+    // (DeleteObject, el undo) la actualiza.
+    GameObject* selectedObject = nullptr;
+    bool revealSelection = false;   // la Hierarchy despliega los padres de la seleccion (picking)
 
     // Ventanas visibles
     bool showConsole = true;
@@ -102,8 +122,9 @@ private:
 
     bool dockLayoutBuilt = false;
 
-    // Hierarchy: renombrar
-    int renameTargetIdx = -1;
+    // Hierarchy: renombrar (por UID: el popup sigue abierto varios frames y el undo podria sustituir el objeto)
+    uint64_t renameTargetUid = 0;
+    bool openRenamePopup = false;
     char renameBuf[128] = { 0 };
 
     // Configuration

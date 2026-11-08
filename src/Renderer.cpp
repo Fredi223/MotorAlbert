@@ -204,7 +204,7 @@ int Renderer::Render(const Scene& scene, const glm::mat4& view, const glm::mat4&
     for (GameObject* goPtr : visibleObjects)
     {
         GameObject& go = *goPtr;
-        if (go.hidden) continue;
+        if (go.IsHiddenInHierarchy()) continue;
 
         if (frustumCulling)
         {
@@ -224,7 +224,7 @@ int Renderer::Render(const Scene& scene, const glm::mat4& view, const glm::mat4&
         if (drawNormalsForThis || drawFaceNormalsForThis)
         {
             glUseProgram(normalShaderProgram);
-            glm::mat4 model = go.transform.GetMatrix();
+            const glm::mat4& model = go.worldMatrix;
             glUniformMatrix4fv(normalUModelLoc, 1, GL_FALSE, glm::value_ptr(model));
             glUniformMatrix4fv(normalUViewLoc, 1, GL_FALSE, glm::value_ptr(view));
             glUniformMatrix4fv(normalUProjLoc, 1, GL_FALSE, glm::value_ptr(projection));

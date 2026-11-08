@@ -1,8 +1,7 @@
 #pragma once
-#include <vector>
 #include <glm/glm.hpp>
 
-#include "GameObject.h"
+#include "ModuleModelLoader.h"
 
 // Calculos geometricos del motor: AABB, frustum culling y raycast para el picking.
 
@@ -26,9 +25,6 @@ bool RayIntersectsAABB(const glm::vec3& rayOrig, const glm::vec3& rayDir,
 glm::vec3 ScreenToWorldRay_UnProject(float mouseX, float mouseY,
     float viewportW, float viewportH,
     const glm::mat4& projection, const glm::mat4& view);
-
-// AABB de mundo que engloba todos los objetos, con un 10% de holgura (limites del octree).
-void ComputeSceneAABB(const std::vector<GameObject>& objects, glm::vec3& outMin, glm::vec3& outMax);
 
 // AABB local de una malla. Devuelve false si la malla no tiene vertices.
 bool ComputeAABBFromMesh(const Mesh& mesh, glm::vec3& outMin, glm::vec3& outMax);

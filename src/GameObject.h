@@ -1,10 +1,11 @@
 #pragma once
 
-#include <cfloat>
+#include <cstdint>
+#include <memory>
 #include <string>
+#include <vector>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 #include "Transform.h"
 #include "ModuleModelLoader.h"
@@ -12,50 +13,20 @@
 struct TextureComponent {
     GLuint textureID = 0;
     std::string path;
+
+    bool operator==(const TextureComponent&) const = default;
 };
 
 struct MeshComponent {
-    MeshPtr mesh;   // nullptr = sin malla
+    MeshPtr mesh;   // nullptr = sin malla (p. ej. un GameObject vacio)
+
+    bool operator==(const MeshComponent&) const = default;
 };
 
-struct GameObject
+// Datos propios de un GameObject, sin el arbol. Se pueden copiar tal cual: Duplicate y los
+// snapshots del undo copian esto y reconstruyen el arbol aparte.
+struct GameObjectData
 {
-    void UpdateWorldAABB()
-    {
-        glm::mat4 model = transform.GetMatrix();
-
-        glm::vec3 corners[8] = {
-            aabbMin,
-            {aabbMax.x, aabbMin.y, aabbMin.z},
-            {aabbMin.x, aabbMax.y, aabbMin.z},
-            {aabbMax.x, aabbMax.y, aabbMin.z},
-            {aabbMin.x, aabbMin.y, aabbMax.z},
-            {aabbMax.x, aabbMin.y, aabbMax.z},
-            {aabbMin.x, aabbMax.y, aabbMax.z},
-            aabbMax
-        };
-
-        glm::vec3 minB(FLT_MAX);
-        glm::vec3 maxB(-FLT_MAX);
-
-        for (int i = 0; i < 8; ++i)
-        {
-            glm::vec3 world = glm::vec3(model * glm::vec4(corners[i], 1.0f));
-            minB = glm::min(minB, world);
-            maxB = glm::max(maxB, world);
-        }
-
-        worldAabbMin = minB;
-        worldAabbMax = maxB;
-    }
-
-    glm::vec3 aabbMin{ 0.0f };
-    glm::vec3 aabbMax{ 0.0f };
-
-    glm::vec3 worldAabbMin{ 0.0f };
-    glm::vec3 worldAabbMax{ 0.0f };
-
-    // --- Normals debug ---
     enum NormalsMode
     {
         NM_UseGlobal = 0,
@@ -63,23 +34,54 @@ struct GameObject
         NM_ForceOff
     };
 
-    NormalsMode normalsMode = NM_UseGlobal;
-    bool showFaceNormals = false;   // normales por cara (triangulo) de este objeto
-
+    uint64_t uid = 0;               // identificador estable (se serializara en lugar de punteros)
     std::string name;
-    Transform transform;
+    Transform transform;            // LOCAL, relativo al padre
     MeshComponent meshComp;
     TextureComponent texComp;
 
-    bool hidden = false;
+    glm::vec3 aabbMin{ 0.0f };      // AABB local de la malla
+    glm::vec3 aabbMax{ 0.0f };
 
-    void Draw(GLint uModelLoc) const
-    {
-        glm::mat4 model = transform.GetMatrix();
-        glUniformMatrix4fv(uModelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        if (meshComp.mesh) meshComp.mesh->Draw();
-    }
-    // No hay Destroy: la malla se libera sola con su ultimo MeshPtr, y la textura (que puede estar
-    // compartida por GLuint) la libera Scene::ReleaseTextureIfUnused.
+    bool hidden = false;            // oculta tambien a sus hijos (IsHiddenInHierarchy)
+    NormalsMode normalsMode = NM_UseGlobal;
+    bool showFaceNormals = false;   // normales por cara (triangulo) de este objeto
+
+    bool operator==(const GameObjectData&) const = default;
 };
 
+// Nodo de la escena. Cada GameObject es dueno de sus hijos (unique_ptr), asi que borrar uno borra
+// su rama entera y sus direcciones no cambian al anadir o quitar hermanos. parent no es dueno.
+struct GameObject : GameObjectData
+{
+    GameObject* parent = nullptr;
+    std::vector<std::unique_ptr<GameObject>> children;
+
+    // Derivados del transform: los recalcula Scene::UpdateTransforms.
+    glm::mat4 worldMatrix{ 1.0f };
+    glm::vec3 worldAabbMin{ 0.0f };   // sin malla: el punto de la posicion de mundo
+    glm::vec3 worldAabbMax{ 0.0f };
+
+    bool HasMesh() const { return meshComp.mesh != nullptr; }
+
+    // true si el o alguno de sus antecesores esta oculto.
+    bool IsHiddenInHierarchy() const;
+
+    // true si ancestor es su padre, abuelo... (un objeto no es descendiente de si mismo).
+    bool IsDescendantOf(const GameObject* ancestor) const;
+
+    // Matriz de mundo calculada subiendo por los padres (no usa la cacheada).
+    glm::mat4 ComputeWorldMatrix() const;
+
+    // Recalcula worldMatrix y el AABB de mundo a partir de la matriz de mundo del padre.
+    void UpdateWorld(const glm::mat4& parentWorld);
+
+    void Draw(GLint uModelLoc) const;
+};
+
+// AABB de mundo que engloba las mallas del objeto y de toda su rama. Si ninguna tiene malla devuelve
+// false y la caja es el punto de su posicion de mundo.
+bool ComputeHierarchyAABB(const GameObject& go, glm::vec3& outMin, glm::vec3& outMax);
+
+// UID aleatorio de 64 bits, nunca 0 (0 = "ninguno" / la raiz de la escena).
+uint64_t GenerateUID();

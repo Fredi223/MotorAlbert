@@ -8,15 +8,16 @@
 #include "Logger.h"
 #include "Scene.h"
 
-// Target orbital = centro del AABB de mundo del objeto seleccionado; sin selección, el origen.
-static void GetOrbitTarget(std::vector<GameObject>& objs, int sel, glm::vec3& outCenter, float& outRadius)
+// Target orbital = centro del AABB de mundo del objeto seleccionado Y su rama (asi un padre vacio,
+// como el de un FBX, encuadra el modelo entero); sin selección, el origen.
+static void GetOrbitTarget(const GameObject* sel, glm::vec3& outCenter, float& outRadius)
 {
-    if (sel >= 0 && sel < (int)objs.size())
+    if (sel)
     {
-        GameObject& go = objs[sel];
-        go.UpdateWorldAABB(); // defensivo: garantiza un AABB fresco aunque otra ruta haya tocado el transform
-        outCenter = (go.worldAabbMin + go.worldAabbMax) * 0.5f;
-        outRadius = 0.5f * glm::length(go.worldAabbMax - go.worldAabbMin);
+        glm::vec3 minB, maxB;
+        ComputeHierarchyAABB(*sel, minB, maxB);
+        outCenter = (minB + maxB) * 0.5f;
+        outRadius = 0.5f * glm::length(maxB - minB);
     }
     else
     {
@@ -62,16 +63,16 @@ void Editor::ReadMouseDelta(float& dx, float& dy)
 // F: encuadra el objeto seleccionado manteniendo la dirección de mirada actual.
 void Editor::FrameSelectedObject()
 {
-    if (selectedObject < 0 || selectedObject >= (int)scene.objects.size())
+    if (!selectedObject)
     {
         Console::LogInfo("F: no hay ningun objeto seleccionado que encuadrar");
         return;
     }
-    GetOrbitTarget(scene.objects, selectedObject, camera.orbitTarget, camera.orbitRadius);
+    GetOrbitTarget(selectedObject, camera.orbitTarget, camera.orbitRadius);
     camera.FrameTarget(viewportHeightF > 0.0f ? viewportWidthF / viewportHeightF : 1.0f);
 
     Console::LogInfo("Encuadrado %s: target=(%.2f, %.2f, %.2f) distancia=%.2f",
-        scene.objects[selectedObject].name.c_str(),
+        selectedObject->name.c_str(),
         camera.orbitTarget.x, camera.orbitTarget.y, camera.orbitTarget.z, camera.orbitDistance);
 }
 
@@ -107,7 +108,7 @@ void Editor::UpdateCamera()
             orbitActive = true;
 
             // Target: objeto seleccionado (o el origen). distance: la actual cámara-target.
-            GetOrbitTarget(scene.objects, selectedObject, camera.orbitTarget, camera.orbitRadius);
+            GetOrbitTarget(selectedObject, camera.orbitTarget, camera.orbitRadius);
             camera.BeginOrbit();
         }
     }
@@ -155,7 +156,7 @@ void Editor::UpdateCamera()
     if (wheelDelta != 0.0f)
     {
         if (!orbitActive)
-            GetOrbitTarget(scene.objects, selectedObject, camera.orbitTarget, camera.orbitRadius);
+            GetOrbitTarget(selectedObject, camera.orbitTarget, camera.orbitRadius);
         camera.Zoom(wheelDelta, orbitActive);
     }
     wheelDelta = 0.0f;
