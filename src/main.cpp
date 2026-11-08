@@ -10,6 +10,7 @@
 #include "FrameTiming.h"
 #include "Logger.h"
 #include "Renderer.h"
+#include "ResourceManager.h"
 #include "Scene.h"
 #include "UndoHistory.h"
 
@@ -100,23 +101,23 @@ int main(int argc, char* argv[])
     // La escena empieza vacia; RebuildOctree recalcula los limites del octree cada vez que se
     // anade algo (la escena Street inicial, drag & drop o una primitiva).
     Scene scene;
-    scene.defaultTexture = renderer.GetCheckerTexture();
-
-    // El historial de undo guarda snapshots que pueden usar texturas que ya no estan en la
-    // escena: la escena le pregunta antes de liberar una.
     UndoHistory history;
-    scene.isTextureUsedElsewhere = [&history](GLuint tex) { return history.UsesTexture(tex); };
 
-    // La escena Street (la pide la guia de la entrega 2) se carga al arrancar desde Resources/, que
-    // vive junto al ejecutable (CMake la copia ahi al compilar): asi funciona igual desde build/
-    // que desde la carpeta de entrega.
+    // Assets/ vive junto al ejecutable (CMake la copia ahi al compilar) y Library/ se crea a su lado:
+    // asi funciona igual desde build/ que desde la carpeta de entrega. Init importa lo que falte.
+    ResourceManager resources;
     {
         const char* basePath = SDL_GetBasePath();
-        const std::string street = std::string(basePath ? basePath : "") + "Resources/Street/Street environment_V01.FBX";
-        scene.LoadFbx(street);
+        resources.Init(basePath ? basePath : "");
     }
 
-    Editor editor(window, scene, history, renderer, timing);
+    // La escena Street (la pide la guia de la entrega 2) se instancia al arrancar, desde Library.
+    if (const uint64_t street = resources.FindByAssetPath("Street/Street environment_V01.FBX"))
+        scene.InstantiateModel(street, resources);
+    else
+        Console::LogError("No se encuentra Assets/Street/Street environment_V01.FBX");
+
+    Editor editor(window, scene, resources, history, renderer, timing);
     editor.Init(context);
 
     Console::LogInfo("Iniciando bucle principal");
@@ -141,7 +142,7 @@ int main(int argc, char* argv[])
     // ========================================================
     Console::LogInfo("Saliendo del bucle principal");
 
-    // Las mallas se liberan con su ultimo MeshPtr (escena y snapshots del undo): antes de destruir el contexto.
+    // Las mallas y texturas se descargan con su ultima referencia (escena y snapshots del undo): antes de destruir el contexto.
     scene.Clear();
     history.Clear();
 

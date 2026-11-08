@@ -5,6 +5,7 @@
     "sdl3",
     "glm",
     "assimp",
+    "nlohmann-json",
     {
       "name": "imgui",
       "features": [

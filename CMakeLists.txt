@@ -13,6 +13,7 @@ find_package(OpenGL REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(assimp CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 add_executable(MotorAlbert
     src/main.cpp
@@ -22,6 +23,8 @@ add_executable(MotorAlbert
     src/Geometry.h
     src/Logger.cpp
     src/Logger.h
+    src/LibraryFormat.cpp
+    src/LibraryFormat.h
     src/ModuleModelLoader.cpp
     src/ModuleModelLoader.h
     src/Octree.cpp
@@ -51,6 +54,9 @@ add_executable(MotorAlbert
     src/FrameTiming.h
     src/Renderer.cpp
     src/Renderer.h
+    src/ResourceManager.cpp
+    src/ResourceManager.h
+    src/Uid.h
     src/GameObject.cpp
     src/GameObject.h
     src/Component.h
@@ -76,18 +82,20 @@ target_link_libraries(MotorAlbert PRIVATE
     glm::glm
     assimp::assimp
     imgui::imgui
+    nlohmann_json::nlohmann_json
 )
 
 if(WIN32)
     target_link_libraries(MotorAlbert PRIVATE psapi)   # GetProcessMemoryInfo
 endif()
 
-# Resources/ se copia junto al ejecutable: el motor la busca ahi (SDL_GetBasePath), tanto en
-# build/ como en la carpeta de entrega. Es un target propio (y no un POST_BUILD del ejecutable)
-# para que se copie tambien cuando solo cambian los recursos y el .exe no se vuelve a enlazar.
+# Assets/ se copia junto al ejecutable: el motor la busca ahi (SDL_GetBasePath), tanto en
+# build/ como en la carpeta de entrega, y crea Library/ a su lado al arrancar (no se copia: se
+# genera). Es un target propio (y no un POST_BUILD del ejecutable) para que se copie tambien
+# cuando solo cambian los assets y el .exe no se vuelve a enlazar.
 add_custom_target(CopyResources ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Resources $<TARGET_FILE_DIR:MotorAlbert>/Resources
-    COMMENT "Copiando Resources junto al ejecutable"
+        ${CMAKE_SOURCE_DIR}/Assets $<TARGET_FILE_DIR:MotorAlbert>/Assets
+    COMMENT "Copiando Assets junto al ejecutable"
 )
 add_dependencies(CopyResources MotorAlbert)

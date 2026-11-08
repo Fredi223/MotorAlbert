@@ -1,7 +1,7 @@
 #include "GameObject.h"
 
 #include <cfloat>
-#include <random>
+
 #include <glm/gtc/type_ptr.hpp>
 
 const ComponentMesh* GameObject::ActiveMesh() const
@@ -13,7 +13,7 @@ const ComponentMesh* GameObject::ActiveMesh() const
 GLuint GameObject::ActiveTexture() const
 {
     const ComponentMaterial* mat = components.Get<ComponentMaterial>();
-    return (mat && mat->enabled) ? mat->textureID : 0;
+    return (mat && mat->enabled && mat->texture) ? mat->texture->id : 0;
 }
 
 bool GameObject::IsHiddenInHierarchy() const
@@ -48,12 +48,13 @@ void GameObject::UpdateWorld(const glm::mat4& parentWorld)
     }
 
     // AABB de mundo: el que envuelve las 8 esquinas del AABB local ya transformadas.
+    const Mesh& mesh = *m->mesh;
     glm::vec3 minB(FLT_MAX), maxB(-FLT_MAX);
     for (int i = 0; i < 8; ++i)
     {
-        const glm::vec3 corner((i & 1) ? m->aabbMax.x : m->aabbMin.x,
-                               (i & 2) ? m->aabbMax.y : m->aabbMin.y,
-                               (i & 4) ? m->aabbMax.z : m->aabbMin.z);
+        const glm::vec3 corner((i & 1) ? mesh.aabbMax.x : mesh.aabbMin.x,
+                               (i & 2) ? mesh.aabbMax.y : mesh.aabbMin.y,
+                               (i & 4) ? mesh.aabbMax.z : mesh.aabbMin.z);
         const glm::vec3 world = glm::vec3(worldMatrix * glm::vec4(corner, 1.0f));
         minB = glm::min(minB, world);
         maxB = glm::max(maxB, world);
@@ -91,12 +92,4 @@ bool ComputeHierarchyAABB(const GameObject& go, glm::vec3& outMin, glm::vec3& ou
     if (!any)
         outMin = outMax = glm::vec3(go.worldMatrix[3]);
     return any;
-}
-
-uint64_t GenerateUID()
-{
-    static std::mt19937_64 rng{ std::random_device{}() };
-    uint64_t uid = 0;
-    while (uid == 0) uid = rng();
-    return uid;
 }

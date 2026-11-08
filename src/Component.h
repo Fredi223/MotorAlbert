@@ -9,6 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "ModuleModelLoader.h"
+#include "TextureLoader.h"
 
 // Componentes de un GameObject. El Transform no esta aqui: todo GameObject tiene uno y solo uno,
 // asi que es un miembro fijo (GameObjectData::transform). El resto son opcionales, como mucho uno
@@ -67,9 +68,7 @@ struct ComponentMesh : ComponentOf<ComponentMesh, Component::Type::Mesh>
 {
     enum NormalsMode { NM_UseGlobal = 0, NM_ForceOn, NM_ForceOff };
 
-    MeshPtr mesh;                       // compartida entre duplicados y snapshots del undo
-    glm::vec3 aabbMin{ 0.0f };          // AABB local de la malla
-    glm::vec3 aabbMax{ 0.0f };
+    MeshPtr mesh;                       // recurso compartido (ResourceManager); lleva su AABB local
     NormalsMode normalsMode = NM_UseGlobal;
     bool showFaceNormals = false;       // normales por cara (triangulo) de este objeto
 
@@ -78,8 +77,7 @@ struct ComponentMesh : ComponentOf<ComponentMesh, Component::Type::Mesh>
 
 struct ComponentMaterial : ComponentOf<ComponentMaterial, Component::Type::Material>
 {
-    GLuint textureID = 0;               // 0 = se dibuja con la checker
-    std::string texturePath;
+    TexturePtr texture;                 // recurso compartido (ResourceManager); nullptr = checker
 
     bool operator==(const ComponentMaterial&) const = default;
 };

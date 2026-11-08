@@ -72,7 +72,6 @@ namespace
         if (rTop > 0.0f) addCap(rTop, 0.5f * height, 1.0f);
         if (rBottom > 0.0f) addCap(rBottom, -0.5f * height, -1.0f);
 
-        mesh.SetupMesh();
         return mesh;
     }
 }
@@ -92,7 +91,6 @@ Mesh CreateCubeMesh()
     };
     for (const Face& f : faces)
         AddQuad(mesh, f.n * 0.5f, f.u, f.v, f.n);
-    mesh.SetupMesh();
     return mesh;
 }
 
@@ -100,7 +98,6 @@ Mesh CreatePlaneMesh()
 {
     Mesh mesh;
     AddQuad(mesh, glm::vec3(0.0f), { 1, 0, 0 }, { 0, 0, -1 }, { 0, 1, 0 });
-    mesh.SetupMesh();
     return mesh;
 }
 
@@ -126,7 +123,6 @@ Mesh CreateSphereMesh(unsigned int sectors, unsigned int stacks)
             mesh.indices.insert(mesh.indices.end(), { a, a + 1, b, a + 1, b + 1, b });
         }
     }
-    mesh.SetupMesh();
     return mesh;
 }
 

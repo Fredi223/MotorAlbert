@@ -1,13 +1,11 @@
 #include "Scene.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cfloat>
-#include <unordered_map>
 
 #include "Geometry.h"
 #include "Logger.h"
-#include "TextureLoader.h"
+#include "ResourceManager.h"
 
 Scene::Scene()
 {
@@ -106,124 +104,38 @@ GameObject* Scene::AddChild(GameObject* parent, std::unique_ptr<GameObject> chil
     return raw;
 }
 
-// Lo que comparten los nodos de un modelo al convertirlos en GameObjects: cada malla (y su textura)
-// se crea una vez aunque la usen varios nodos.
-struct LoadedMesh {
-    MeshPtr mesh;
-    glm::vec3 aabbMin{ 0.0f }, aabbMax{ 0.0f };
-    GLuint texture = 0;
-    std::string texturePath;
-};
-
-static void SetMeshOn(GameObject& go, const LoadedMesh& m)
+// Pone en go la malla y la textura de una referencia del modelo, pidiendolas al gestor (que carga
+// cada una una sola vez aunque la usen varios nodos).
+static void SetMeshOn(GameObject& go, const ModelMeshRef& ref, ResourceManager& resources)
 {
-    ComponentMesh& meshComp = go.components.Add<ComponentMesh>();
-    meshComp.mesh = m.mesh;
-    meshComp.aabbMin = m.aabbMin;
-    meshComp.aabbMax = m.aabbMax;
-    ComponentMaterial& material = go.components.Add<ComponentMaterial>();
-    material.textureID = m.texture;
-    material.texturePath = m.texturePath;
+    go.components.Add<ComponentMesh>().mesh = resources.GetMesh(ref.meshUid);
+    go.components.Add<ComponentMaterial>().texture = ref.textureUid ? resources.GetTexture(ref.textureUid) : nullptr;
 }
 
 // Un nodo con una sola malla la lleva el mismo; con varias, cada una va en un hijo (un GameObject
 // tiene una malla).
-static void AttachMeshes(Scene& scene, GameObject& go, const ModelNode& node, const std::vector<LoadedMesh>& meshes)
+static void BuildNode(Scene& scene, const ModelNodeData& node, GameObject& go, ResourceManager& resources)
 {
-    if (node.meshIndices.size() == 1)
-    {
-        SetMeshOn(go, meshes[node.meshIndices[0]]);
-        return;
-    }
-    for (unsigned int idx : node.meshIndices)
-    {
-        const std::string& meshName = meshes[idx].mesh->name;
-        GameObject* part = scene.CreateEmpty(meshName.empty() ? node.name + "_mesh" : meshName, &go);
-        SetMeshOn(*part, meshes[idx]);
-    }
+    go.transform.SetFromMatrix(node.transform);
+    if (node.meshes.size() == 1)
+        SetMeshOn(go, node.meshes[0], resources);
+    else
+        for (const ModelMeshRef& ref : node.meshes)
+            SetMeshOn(*scene.CreateEmpty(ref.name.empty() ? node.name + "_mesh" : ref.name, &go), ref, resources);
+
+    for (const ModelNodeData& child : node.children)
+        BuildNode(scene, child, *scene.CreateEmpty(child.name, &go), resources);
 }
 
-static void BuildNode(Scene& scene, const ModelNode& node, GameObject* parent, const std::vector<LoadedMesh>& meshes)
+GameObject* Scene::InstantiateModel(uint64_t modelUid, ResourceManager& resources)
 {
-    GameObject* go = scene.CreateEmpty(node.name, parent);
-    go->transform.SetFromMatrix(node.transform);
-    AttachMeshes(scene, *go, node, meshes);
-    for (const ModelNode& child : node.children)
-        BuildNode(scene, child, go, meshes);
-}
+    ModelNodeData model;
+    if (!resources.LoadModel(modelUid, model)) return nullptr;
 
-GameObject* Scene::LoadFbx(const std::string& filePath)
-{
-    Model model = LoadModel(filePath);
-    if (model.meshes.empty()) return nullptr;
-
-    const size_t lastSlash = filePath.find_last_of("/\\");
-    const size_t nameStart = (lastSlash == std::string::npos) ? 0 : lastSlash + 1;
-    const size_t lastDot = filePath.find_last_of('.');
-    const std::string baseName = filePath.substr(nameStart,
-        (lastDot == std::string::npos || lastDot < nameStart ? filePath.size() : lastDot) - nameStart);
-    const std::string fbxDir = filePath.substr(0, nameStart);
-
-    // BakerHouse.fbx es inconsistente: sus vertices ya vienen con Y arriba, pero su nodo
-    // lleva ademas una rotacion de -90 en X (pensada para modelos con Z arriba, como el
-    // Hotdog). Con esa rotacion la casa queda tumbada, con el tejado hacia -Z; +90 en X en la
-    // raiz la deja derecha. No hay regla general que distinga este caso, asi que se corrige por nombre.
-    std::string lowerBase = baseName;
-    std::transform(lowerBase.begin(), lowerBase.end(), lowerBase.begin(),
-        [](unsigned char c) { return std::tolower(c); });
-    const bool isBakerHouse = (lowerBase == "bakerhouse");
-
-    // Mallas y texturas, una vez cada una. Una textura la pueden usar varias mallas.
-    std::vector<LoadedMesh> meshes;
-    meshes.reserve(model.meshes.size());
-    std::unordered_map<std::string, GLuint> texturesByPath;
-    for (Mesh& mesh : model.meshes)
-    {
-        LoadedMesh m;
-        m.mesh = MakeSharedMesh(std::move(mesh));
-        ComputeAABBFromMesh(*m.mesh, m.aabbMin, m.aabbMax);
-        m.texture = defaultTexture;
-
-        const std::string& storedPath = m.mesh->texturePath;
-        if (!storedPath.empty())
-        {
-            // La ruta del material puede ser solo el nombre de archivo o la ruta absoluta del
-            // PC donde se exporto el FBX (que aqui no existe): se usa solo el nombre del archivo,
-            // buscado junto al .fbx (no en el directorio de trabajo del proceso).
-            const size_t texNameStart = storedPath.find_last_of("/\\");
-            const std::string textureName = (texNameStart == std::string::npos) ? storedPath : storedPath.substr(texNameStart + 1);
-            const std::string textureFullPath = fbxDir + textureName;
-
-            auto cached = texturesByPath.find(textureFullPath);
-            if (cached == texturesByPath.end())
-            {
-                const GLuint tex = LoadImageTexture(textureFullPath);
-                if (!tex) Console::LogError("Se usa la textura checker en lugar de %s", textureFullPath.c_str());
-                cached = texturesByPath.emplace(textureFullPath, tex).first;
-            }
-            if (cached->second)
-            {
-                m.texture = cached->second;
-                m.texturePath = textureFullPath;
-            }
-        }
-        meshes.push_back(std::move(m));
-    }
-
-    // La raiz del modelo es el nodo raiz del archivo, con la escala de unidades del FBX (y el giro de
-    // la Baker House) por encima: mover, girar o escalar esta raiz afecta al modelo entero.
-    Transform fix;
-    fix.scale = glm::vec3(model.unitScale);
-    if (isBakerHouse) fix.rotation.x = 90.0f;
-
-    GameObject* modelRoot = CreateEmpty(baseName);
-    modelRoot->transform.SetFromMatrix(fix.GetMatrix() * model.root.transform);
-    AttachMeshes(*this, *modelRoot, model.root, meshes);
-    for (const ModelNode& child : model.root.children)
-        BuildNode(*this, child, modelRoot, meshes);
-
+    GameObject* modelRoot = CreateEmpty(model.name);
+    BuildNode(*this, model, *modelRoot, resources);
     RebuildOctree();
-    Console::LogInfo("FBX cargado: %s (%zu mallas, %zu texturas)", filePath.c_str(), meshes.size(), texturesByPath.size());
+    Console::LogInfo("Modelo instanciado: %s", model.name.c_str());
     return modelRoot;
 }
 
@@ -235,15 +147,14 @@ GameObject* Scene::CreateEmpty(const std::string& name, GameObject* parent)
     return AddChild(parent, std::move(go));
 }
 
-GameObject* Scene::AddPrimitive(const char* name, Mesh mesh)
+GameObject* Scene::AddPrimitive(const char* name, MeshPtr mesh)
 {
+    if (!mesh) return nullptr;
     auto go = std::make_unique<GameObject>();
     go->uid = GenerateUID();
     go->name = name;
-    ComponentMesh& meshComp = go->components.Add<ComponentMesh>();
-    meshComp.mesh = MakeSharedMesh(std::move(mesh));
-    ComputeAABBFromMesh(*meshComp.mesh, meshComp.aabbMin, meshComp.aabbMax);
-    go->components.Add<ComponentMaterial>().textureID = defaultTexture;
+    go->components.Add<ComponentMesh>().mesh = std::move(mesh);
+    go->components.Add<ComponentMaterial>();   // sin textura: la checker
 
     GameObject* raw = AddChild(nullptr, std::move(go));
     RebuildOctree();
@@ -285,20 +196,9 @@ void Scene::Erase(GameObject* go)
 {
     if (!go || go == &root) return;
 
-    // Las texturas de la rama se liberan cuando ya no esta en la escena (si nadie mas las usa).
-    std::vector<GLuint> textures;
-    std::function<void(const GameObject&)> collect = [&](const GameObject& o) {
-        if (const auto* mat = o.components.Get<ComponentMaterial>()) textures.push_back(mat->textureID);
-        for (const auto& child : o.children) collect(*child);
-    };
-    collect(*go);
-
-    go->parent->children.erase(FindInParent(go));   // destruye la rama entera
+    // Destruye la rama entera. Sus mallas y texturas se descargan solas si nadie mas las usa.
+    go->parent->children.erase(FindInParent(go));
     structureDirty = true;
-
-    std::sort(textures.begin(), textures.end());
-    textures.erase(std::unique(textures.begin(), textures.end()), textures.end());
-    for (GLuint tex : textures) ReleaseTextureIfUnused(tex);
 }
 
 bool Scene::Reparent(GameObject* go, GameObject* newParent)
@@ -327,14 +227,3 @@ void Scene::Clear()
     structureDirty = true;
 }
 
-void Scene::ReleaseTextureIfUnused(GLuint tex)
-{
-    if (tex == 0 || tex == defaultTexture) return;
-    bool inUse = false;
-    ForEach([&](const GameObject& o) {
-        const auto* mat = o.components.Get<ComponentMaterial>();
-        if (mat && mat->textureID == tex) inUse = true;
-    });
-    if (!inUse && isTextureUsedElsewhere) inUse = isTextureUsedElsewhere(tex);
-    if (!inUse) glDeleteTextures(1, &tex);
-}

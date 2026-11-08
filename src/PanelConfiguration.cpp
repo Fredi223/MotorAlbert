@@ -10,6 +10,7 @@
 #include "GameObject.h"
 #include "Logger.h"
 #include "Renderer.h"
+#include "ResourceManager.h"
 #include "Scene.h"
 #include "SystemInfo.h"
 
@@ -97,13 +98,10 @@ void Editor::DrawConfiguration()
             const bool wrapChanged = ImGui::Combo("Wrap", &texWrap, wraps, IM_ARRAYSIZE(wraps));
             ImGui::TextDisabled("Se aplica a las texturas ya cargadas");
 
+            // Las texturas cargadas (con alguna referencia) y la checker.
             std::vector<GLuint> texIds{ renderer.GetCheckerTexture() };
-            scene.ForEach([&texIds](const GameObject& o) {
-                const auto* mat = o.components.Get<ComponentMaterial>();
-                if (mat && mat->textureID != 0) texIds.push_back(mat->textureID);
-            });
-            std::sort(texIds.begin(), texIds.end());
-            texIds.erase(std::unique(texIds.begin(), texIds.end()), texIds.end());
+            for (const auto& [uid, entry] : resources.Entries())
+                if (const TexturePtr tex = entry.texture.lock()) texIds.push_back(tex->id);
 
             if (filterChanged || wrapChanged) {
                 const GLint minF = texFilter == 0 ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;

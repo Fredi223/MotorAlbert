@@ -7,11 +7,6 @@
 #include <cstring>
 #include <vector>
 
-#ifndef GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
-#define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT 0x83F1
-#define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83F2
-#define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83F3
-#endif
 
 namespace
 {
@@ -111,54 +106,58 @@ namespace
     }
 }
 
-GLuint LoadDDSTexture(const char* path, int* outWidth, int* outHeight)
+bool DecodeDDS(const std::vector<uint8_t>& file, const std::string& pathForLog, TextureData& out)
 {
-    FILE* f = std::fopen(path, "rb");
-    if (!f)
-    {
-        Console::LogError("DDS: no se pudo abrir %s", path);
-        return 0;
-    }
+    const char* path = pathForLog.c_str();
+    size_t cursor = 0;
+    auto read = [&](void* dst, size_t size) {
+        if (cursor + size > file.size()) return false;
+        std::memcpy(dst, file.data() + cursor, size);
+        cursor += size;
+        return true;
+    };
 
     uint32_t magic = 0;
     DdsHeader h{};
-    if (std::fread(&magic, 4, 1, f) != 1 || magic != DDS_MAGIC || std::fread(&h, sizeof(h), 1, f) != 1 || h.size != 124)
+    if (!read(&magic, 4) || magic != DDS_MAGIC || !read(&h, sizeof(h)) || h.size != 124)
     {
-        std::fclose(f);
         Console::LogError("DDS: %s no es un DDS valido", path);
-        return 0;
+        return false;
     }
 
     const bool compressed = (h.pfFlags & DDPF_FOURCC) != 0;
-    GLenum format = 0;
+    TextureData::Format format = TextureData::Format::RGBA8;
+    bool formatOk = false;
     if (compressed)
     {
-        if (h.pfFourCC == FOURCC_DXT1) format = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
-        else if (h.pfFourCC == FOURCC_DXT3) format = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
-        else if (h.pfFourCC == FOURCC_DXT5) format = GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+        formatOk = true;
+        if (h.pfFourCC == FOURCC_DXT1) format = TextureData::Format::DXT1;
+        else if (h.pfFourCC == FOURCC_DXT3) format = TextureData::Format::DXT3;
+        else if (h.pfFourCC == FOURCC_DXT5) format = TextureData::Format::DXT5;
+        else formatOk = false;
     }
-    const bool uncompressedOk = !compressed && (h.pfFlags & DDPF_RGB) && (h.pfRGBBitCount == 32 || h.pfRGBBitCount == 24);
-    if (!format && !uncompressedOk)
+    else
     {
-        std::fclose(f);
+        formatOk = (h.pfFlags & DDPF_RGB) && (h.pfRGBBitCount == 32 || h.pfRGBBitCount == 24);
+    }
+    if (!formatOk)
+    {
         Console::LogError("DDS: formato no soportado en %s (solo DXT1/DXT3/DXT5 y RGB/RGBA sin comprimir)", path);
-        return 0;
+        return false;
     }
     if (h.width == 0 || h.height == 0 || h.width > 16384 || h.height > 16384)
     {
-        std::fclose(f);
         Console::LogError("DDS: dimensiones invalidas en %s (%ux%u)", path, h.width, h.height);
-        return 0;
+        return false;
     }
 
     const uint32_t mipCount = (h.flags & DDSD_MIPMAPCOUNT) ? std::clamp<uint32_t>(h.mipMapCount, 1, 15) : 1;
 
-    GLuint tex = 0;
-    glGenTextures(1, &tex);
-    glBindTexture(GL_TEXTURE_2D, tex);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    out.format = format;
+    out.width = h.width;
+    out.height = h.height;
+    out.mips.clear();
 
-    uint32_t uploaded = 0;
     uint32_t w = h.width, ht = h.height;
     for (uint32_t level = 0; level < mipCount; ++level)
     {
@@ -167,15 +166,15 @@ GLuint LoadDDSTexture(const char* path, int* outWidth, int* outHeight)
             const size_t blockBytes = h.pfFourCC == FOURCC_DXT1 ? 8 : 16;
             const size_t size = size_t(std::max<uint32_t>(1, (w + 3) / 4)) * std::max<uint32_t>(1, (ht + 3) / 4) * blockBytes;
             std::vector<uint8_t> data(size);
-            if (std::fread(data.data(), 1, size, f) != size) break;
+            if (!read(data.data(), size)) break;
             FlipCompressedLevel(data, w, ht, h.pfFourCC);
-            glCompressedTexImage2D(GL_TEXTURE_2D, GLint(level), format, GLsizei(w), GLsizei(ht), 0, GLsizei(size), data.data());
+            out.mips.push_back(std::move(data));
         }
         else
         {
             const uint32_t bytesPerPixel = h.pfRGBBitCount / 8;
             std::vector<uint8_t> src(size_t(w) * ht * bytesPerPixel);
-            if (std::fread(src.data(), 1, src.size(), f) != src.size()) break;
+            if (!read(src.data(), src.size())) break;
             const bool hasAlpha = (h.pfFlags & DDPF_ALPHAPIXELS) != 0;
             std::vector<uint8_t> rgba(size_t(w) * ht * 4);
             for (uint32_t y = 0; y < ht; ++y)
@@ -191,36 +190,19 @@ GLuint LoadDDSTexture(const char* path, int* outWidth, int* outHeight)
                     dst[3] = hasAlpha ? ExtractChannel(px, h.pfAMask) : 255;
                 }
             }
-            glTexImage2D(GL_TEXTURE_2D, GLint(level), GL_RGBA, GLsizei(w), GLsizei(ht), 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+            out.mips.push_back(std::move(rgba));
         }
-        ++uploaded;
         w = std::max(1u, w / 2);
         ht = std::max(1u, ht / 2);
     }
-    std::fclose(f);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
 
-    if (uploaded == 0)
+    if (out.mips.empty())
     {
-        glDeleteTextures(1, &tex);
         Console::LogError("DDS: %s esta truncado", path);
-        return 0;
+        return false;
     }
 
-    // Sin comprimir y sin mips en el archivo: se generan. Si no, MAX_LEVEL deja la textura completa
-    // con los niveles que trae el archivo (un filtro con mipmaps no pide niveles que no existen).
-    if (!compressed && uploaded == 1)
-        glGenerateMipmap(GL_TEXTURE_2D);
-    else
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, GLint(uploaded - 1));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    if (outWidth) *outWidth = int(h.width);
-    if (outHeight) *outHeight = int(h.height);
     const char* kind = !compressed ? "RGBA sin comprimir" : h.pfFourCC == FOURCC_DXT1 ? "DXT1" : h.pfFourCC == FOURCC_DXT3 ? "DXT3" : "DXT5";
-    Console::LogInfo("DDS: textura cargada %s (%ux%u, %s, %u mips)", path, h.width, h.height, kind, uploaded);
-    return tex;
+    Console::LogInfo("DDS: textura decodificada %s (%ux%u, %s, %zu mips)", path, h.width, h.height, kind, out.mips.size());
+    return true;
 }

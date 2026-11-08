@@ -11,6 +11,7 @@
 
 class FrameTiming;
 class Renderer;
+class ResourceManager;
 class Scene;
 class UndoHistory;
 struct GameObject;
@@ -28,7 +29,7 @@ struct GameObject;
 class Editor
 {
 public:
-    Editor(SDL_Window* window, Scene& scene, UndoHistory& history, Renderer& renderer, FrameTiming& timing);
+    Editor(SDL_Window* window, Scene& scene, ResourceManager& resources, UndoHistory& history, Renderer& renderer, FrameTiming& timing);
 
     // Crea el contexto de ImGui y toma el estado actual de la escena como inicio del undo.
     void Init(SDL_GLContext context);
@@ -49,7 +50,8 @@ private:
     // --- Editor.cpp ---
     void DrawMainMenuBar();
     void DrawDockspace();
-    void AssignDroppedTexture(GLuint newTex, const std::string& filePath);
+    void ImportDroppedFile(const std::string& filePath);
+    void AssignDroppedTexture(uint64_t textureUid);
 
     // --- EditorCamera.cpp ---
     void UpdateCamera();
@@ -86,6 +88,7 @@ private:
     // Motor
     SDL_Window* window;
     Scene& scene;
+    ResourceManager& resources;
     UndoHistory& history;
     Renderer& renderer;
     FrameTiming& timing;

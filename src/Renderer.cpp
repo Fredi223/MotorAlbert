@@ -311,7 +311,7 @@ RenderStats Renderer::Render(const Scene& scene, const glm::mat4& view, const gl
 
             // Offset proporcional al AABB local de la malla (no un valor fijo),
             // para que se vea razonable tanto en un modelo diminuto como en uno enorme.
-            float localDiag = glm::length(meshComp->aabbMax - meshComp->aabbMin);
+            float localDiag = glm::length(meshComp->mesh->aabbMax - meshComp->mesh->aabbMin);
             glUniform1f(normalULengthLoc, localDiag * NORMAL_LENGTH_PERCENT);
 
             if (drawNormalsForThis)

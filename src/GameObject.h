@@ -9,6 +9,7 @@
 
 #include "Component.h"
 #include "Transform.h"
+#include "Uid.h"
 
 // Datos propios de un GameObject, sin el arbol. Se pueden copiar tal cual (los componentes se
 // clonan): Duplicate y los snapshots del undo copian esto y reconstruyen el arbol aparte.
@@ -63,6 +64,3 @@ struct GameObject : GameObjectData
 // AABB de mundo que engloba las mallas del objeto y de toda su rama. Si ninguna tiene malla devuelve
 // false y la caja es el punto de su posicion de mundo.
 bool ComputeHierarchyAABB(const GameObject& go, glm::vec3& outMin, glm::vec3& outMax);
-
-// UID aleatorio de 64 bits, nunca 0 (0 = "ninguno" / la raiz de la escena).
-uint64_t GenerateUID();

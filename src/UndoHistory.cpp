@@ -1,17 +1,9 @@
 #include "UndoHistory.h"
 
-#include <algorithm>
 #include <unordered_map>
 #include <imgui.h>
 
 #include "Scene.h"
-
-// Textura del material del objeto guardado (activo o no: la sigue reteniendo), 0 si no tiene.
-GLuint UndoHistory::TextureOf(const ObjectState& o)
-{
-    const auto* mat = o.data.components.Get<ComponentMaterial>();
-    return mat ? mat->textureID : 0;
-}
 
 void UndoHistory::Reset(const Scene& scene, const GameObject* selected)
 {
@@ -76,29 +68,11 @@ void UndoHistory::Update(Scene& scene, GameObject*& selected)
         return;
     }
     if (!ImGui::IsAnyItemActive()) {
-        std::vector<SceneState> discarded;
         undoStack.push_back(std::move(committed));
-        while (undoStack.size() > UNDO_LIMIT) {
-            discarded.push_back(std::move(undoStack.front()));
-            undoStack.pop_front();
-        }
-        for (SceneState& s : redoStack) discarded.push_back(std::move(s));
+        while (undoStack.size() > UNDO_LIMIT) undoStack.pop_front();
         redoStack.clear();
         committed = std::move(current);
-        // Los estados descartados ya no estan en el historial, asi que UsesTexture no los cuenta.
-        for (const SceneState& s : discarded)
-            for (const ObjectState& o : s.objects)
-                scene.ReleaseTextureIfUnused(TextureOf(o));
     }
-}
-
-bool UndoHistory::UsesTexture(GLuint tex) const
-{
-    auto usesTex = [tex](const ObjectState& o) { return TextureOf(o) == tex; };
-    auto stateUsesTex = [&](const SceneState& s) { return std::any_of(s.objects.begin(), s.objects.end(), usesTex); };
-    return stateUsesTex(committed)
-        || std::any_of(undoStack.begin(), undoStack.end(), stateUsesTex)
-        || std::any_of(redoStack.begin(), redoStack.end(), stateUsesTex);
 }
 
 void UndoHistory::Clear()

@@ -7,6 +7,7 @@
 #include <cfloat>
 #include <glm/glm.hpp>
 
+#include "Geometry.h"
 #include "Logger.h"
 
 static glm::mat4 AiToGlm(const aiMatrix4x4& m)
@@ -21,6 +22,7 @@ static glm::mat4 AiToGlm(const aiMatrix4x4& m)
 
 void Mesh::SetupMesh()
 {
+    ComputeAABBFromMesh(*this, aabbMin, aabbMax);
     if (vertices.empty() || indices.empty()) return;
 
     glGenVertexArrays(1, &VAO);
@@ -236,7 +238,6 @@ static void ProcessAIMesh(
             mesh.indices.push_back(face.mIndices[i]);
     }
 
-    mesh.SetupMesh();
     Console::LogInfo("Assimp: malla '%s' -> %zu vertices, %zu indices, textura difusa: %s",
         ai_mesh->mName.C_Str(), mesh.vertices.size() / 11, mesh.indices.size(),
         mesh.texturePath.empty() ? "ninguna" : mesh.texturePath.c_str());

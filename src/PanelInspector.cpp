@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <filesystem>
 #include <glm/gtc/type_ptr.hpp>
 
 #include "imgui.h"
 #include "Logger.h"
 #include "Renderer.h"
+#include "ResourceManager.h"
 #include "Scene.h"
 
 // UI de cada componente. Viven aqui (en el editor) y no en los componentes para que el motor no
@@ -43,7 +43,14 @@ static bool DrawTransform(Transform& transform)
     return changed;
 }
 
-static void DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& renderer)
+// Nombre del recurso para mostrarlo en el Inspector.
+static const char* ResourceName(const ResourceManager& resources, uint64_t uid)
+{
+    const ResourceManager::Entry* e = resources.Find(uid);
+    return e ? e->name.c_str() : "<sin recurso>";
+}
+
+static void DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& renderer, const ResourceManager& resources)
 {
     if (!comp.mesh)
     {
@@ -52,10 +59,9 @@ static void DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& 
     }
 
     const Mesh& mesh = *comp.mesh;
-    ImGui::Text("Vertices: %u", mesh.vertexCount);
-    ImGui::Text("Indices: %u", mesh.indexCount);
-    ImGui::Text("VAO: %u", mesh.VAO);
-    ImGui::Text("Shared by: %ld objects/snapshots", comp.mesh.use_count());
+    ImGui::TextWrapped("Resource: %s", ResourceName(resources, mesh.uid));
+    ImGui::TextDisabled("UID %llu | refs: %ld", (unsigned long long)mesh.uid, comp.mesh.use_count());
+    ImGui::Text("Vertices: %u | Indices: %u", mesh.vertexCount, mesh.indexCount);
 
     static const char* normalsModes[] = { "Use Global", "Force On", "Force Off" };
     int mode = static_cast<int>(comp.normalsMode);
@@ -69,51 +75,25 @@ static void DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& 
         renderer.showNormals ? "ON" : "OFF", renderer.showFaceNormals ? "ON" : "OFF");
 }
 
-static void SetTexture(ComponentMaterial& comp, GLuint tex, Scene& scene)
+static void DrawMaterial(ComponentMaterial& comp, const GameObject& go, const ResourceManager& resources)
 {
-    const GLuint oldTex = comp.textureID;
-    comp.textureID = tex;
-    comp.texturePath.clear();
-    scene.ReleaseTextureIfUnused(oldTex);
-}
-
-static void DrawMaterial(ComponentMaterial& comp, const GameObject& go, Scene& scene, const Renderer& renderer)
-{
-    ImGui::Text("TextureID: %u", comp.textureID);
-    ImGui::TextWrapped("Path: %s", comp.texturePath.empty() ? "<none>" : comp.texturePath.c_str());
-
-    if (comp.textureID != 0)
+    if (!comp.texture)
     {
-        // El tamano se pregunta a OpenGL (nivel 0 de la textura) en vez de guardarlo, asi vale
-        // para cualquier origen: FBX, drag & drop o checker.
-        GLint texW = 0, texH = 0;
-        glGetTextureLevelParameteriv(comp.textureID, 0, GL_TEXTURE_WIDTH, &texW);
-        glGetTextureLevelParameteriv(comp.textureID, 0, GL_TEXTURE_HEIGHT, &texH);
-        ImGui::Text("Size: %d x %d", texW, texH);
-
-        ImGui::Image((ImTextureID)(intptr_t)comp.textureID, ImVec2(128, 128), ImVec2(0, 1), ImVec2(1, 0));
-        if (ImGui::Button("Remove Texture"))
-        {
-            SetTexture(comp, 0, scene);
-            Console::LogInfo("Texture removed from %s", go.name.c_str());
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Open Folder") && !comp.texturePath.empty())
-        {
-            // Sin shell de por medio: una ruta con comillas o '&' no puede inyectar comandos.
-            const std::string dir = std::filesystem::path(comp.texturePath).parent_path().string();
-            SDL_OpenURL(dir.c_str());
-        }
-    }
-    else
-    {
-        ImGui::TextDisabled("No texture assigned (se dibuja con la checker)");
+        ImGui::TextDisabled("Sin textura (se dibuja con la checker)");
+        return;
     }
 
-    if (ImGui::Button("Assign CheckerTexture"))
+    const Texture& tex = *comp.texture;
+    ImGui::TextWrapped("Resource: %s", ResourceName(resources, tex.uid));
+    ImGui::TextDisabled("UID %llu | refs: %ld | GL id %u", (unsigned long long)tex.uid, comp.texture.use_count(), tex.id);
+    static const char* formats[] = { "RGBA8", "DXT1", "DXT3", "DXT5" };
+    ImGui::Text("Size: %u x %u (%s)", tex.width, tex.height, formats[static_cast<int>(tex.format)]);
+    ImGui::Image((ImTextureID)(intptr_t)tex.id, ImVec2(128, 128), ImVec2(0, 1), ImVec2(1, 0));
+
+    if (ImGui::Button("Remove Texture"))
     {
-        SetTexture(comp, renderer.GetCheckerTexture(), scene);
-        Console::LogInfo("Checker texture asignada a %s", go.name.c_str());
+        comp.texture.reset();   // si era la ultima referencia, la textura se descarga
+        Console::LogInfo("Texture removed from %s", go.name.c_str());
     }
 }
 
@@ -195,8 +175,8 @@ void Editor::DrawInspector()
             ImGui::BeginDisabled(!comp.enabled);
             switch (type)
             {
-            case Component::Type::Mesh:     DrawMesh(static_cast<ComponentMesh&>(comp), go, renderer); break;
-            case Component::Type::Material: DrawMaterial(static_cast<ComponentMaterial&>(comp), go, scene, renderer); break;
+            case Component::Type::Mesh:     DrawMesh(static_cast<ComponentMesh&>(comp), go, renderer, resources); break;
+            case Component::Type::Material: DrawMaterial(static_cast<ComponentMaterial&>(comp), go, resources); break;
             case Component::Type::Camera:   DrawCamera(static_cast<ComponentCamera&>(comp), go, scene); break;
             default: break;
             }
@@ -208,12 +188,7 @@ void Editor::DrawInspector()
 
     if (toRemove != Component::Type::Count)
     {
-        // La textura del material que se quita puede ser la ultima referencia: se libera DESPUES de
-        // quitarlo (ReleaseTextureIfUnused no la libera mientras algun objeto la tenga).
-        const ComponentMaterial* mat = go.components.Get<ComponentMaterial>();
-        const GLuint tex = (toRemove == Component::Type::Material && mat) ? mat->textureID : 0;
-        go.components.Remove(toRemove);
-        scene.ReleaseTextureIfUnused(tex);
+        go.components.Remove(toRemove);   // sus recursos se descargan solos si era la ultima referencia
         if (toRemove == Component::Type::Mesh) scene.structureDirty = true;
         Console::LogInfo("Componente %s quitado de %s", Component::TypeName(toRemove), go.name.c_str());
     }

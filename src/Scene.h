@@ -1,6 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <functional>
 #include <string>
 #include <vector>
 #include <glad/glad.h>
@@ -8,6 +7,8 @@
 #include "GameObject.h"
 #include "ModuleModelLoader.h"
 #include "Octree.h"
+
+class ResourceManager;
 
 // Escena del motor: el arbol de GameObjects y el octree que indexa los que tienen malla.
 //
@@ -24,13 +25,6 @@ public:
     GameObject root;
     Octree octree;
     bool structureDirty = false;
-
-    // Textura que reciben los objetos nuevos (la checker). Es global: nunca se libera desde aqui.
-    GLuint defaultTexture = 0;
-
-    // Pregunta si alguien fuera de la escena (p. ej. el historial de undo) sigue usando una
-    // textura. La escena no sabe quien es; si no hay nadie conectado, solo cuentan sus objetos.
-    std::function<bool(GLuint)> isTextureUsedElsewhere;
 
     // Recorre todos los objetos (sin la raiz) en preorden: cada padre antes que sus hijos y los
     // hermanos en orden. f no debe anadir ni quitar objetos.
@@ -52,15 +46,15 @@ public:
     // Recalcula los limites del octree a partir de los objetos y vuelve a insertar los que tienen malla.
     void RebuildOctree();
 
-    // Carga un .fbx: un GameObject vacio con el nombre del archivo y, como hijos, uno por malla,
-    // con su textura si la encuentra. Devuelve el objeto padre (nullptr si no habia mallas).
-    GameObject* LoadFbx(const std::string& filePath);
+    // Crea los GameObjects de un modelo importado (su .model de Library), pidiendo cada malla y textura
+    // al gestor de recursos. Devuelve la raiz del modelo (de primer nivel), o nullptr si falla.
+    GameObject* InstantiateModel(uint64_t modelUid, ResourceManager& resources);
 
     // Crea un GameObject sin malla, hijo de parent (nullptr = primer nivel).
     GameObject* CreateEmpty(const std::string& name, GameObject* parent = nullptr);
 
-    // Crea un GameObject de primer nivel con una geometria basica y la textura por defecto.
-    GameObject* AddPrimitive(const char* name, Mesh mesh);
+    // Crea un GameObject de primer nivel con una malla (una primitiva) y un material sin textura.
+    GameObject* AddPrimitive(const char* name, MeshPtr mesh);
 
     // Copia el objeto con toda su rama justo detras del original (comparten mallas y texturas).
     // Devuelve la copia.
@@ -75,12 +69,6 @@ public:
 
     // Borra todos los objetos.
     void Clear();
-
-    // Una textura puede estar compartida entre varios objetos (duplicados): solo se libera cuando
-    // ningun GameObject ni nadie de fuera (isTextureUsedElsewhere) la usa ya, y nunca la de por
-    // defecto. Hay que llamarla DESPUES de haber quitado la textura del objeto que la dejaba, o ese
-    // objeto la seguiria contando.
-    void ReleaseTextureIfUnused(GLuint tex);
 
 private:
     template <class Node, class F> static void Visit(Node& node, F& f)

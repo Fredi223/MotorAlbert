@@ -1,24 +1,19 @@
 #include "Editor.h"
 
-#include <algorithm>
-#include <cctype>
-
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_opengl3.h"
 #include "imgui_internal.h"   // DockBuilder
 
-#include "DdsLoader.h"
 #include "FrameTiming.h"
 #include "Logger.h"
-#include "Primitives.h"
 #include "Renderer.h"
 #include "Scene.h"
-#include "TextureLoader.h"
+#include "ResourceManager.h"
 #include "UndoHistory.h"
 
-Editor::Editor(SDL_Window* window, Scene& scene, UndoHistory& history, Renderer& renderer, FrameTiming& timing)
-    : window(window), scene(scene), history(history), renderer(renderer), timing(timing)
+Editor::Editor(SDL_Window* window, Scene& scene, ResourceManager& resources, UndoHistory& history, Renderer& renderer, FrameTiming& timing)
+    : window(window), scene(scene), resources(resources), history(history), renderer(renderer), timing(timing)
 {
 }
 
@@ -115,38 +110,8 @@ void Editor::ProcessEvent(const SDL_Event& e)
         break;
 
     case SDL_EVENT_DROP_FILE:
-    {
-        const char* dropped_filedir = e.drop.data;
-        std::string filePath = dropped_filedir ? dropped_filedir : "";
-
-        if (!filePath.empty())
-        {
-            Console::LogInfo("Archivo arrastrado: %s", filePath.c_str());
-
-            std::string lower = filePath;
-            std::transform(lower.begin(), lower.end(), lower.begin(),
-                [](unsigned char c) { return std::tolower(c); });
-
-            if (lower.ends_with(".png") || lower.ends_with(".jpg") ||
-                lower.ends_with(".jpeg") || lower.ends_with(".tga"))
-            {
-                if (GLuint newTex = LoadImageTexture(filePath)) AssignDroppedTexture(newTex, filePath);
-            }
-            else if (lower.ends_with(".dds"))
-            {
-                if (GLuint newTex = LoadDDSTexture(filePath.c_str())) AssignDroppedTexture(newTex, filePath);
-            }
-            else if (lower.ends_with(".fbx"))
-            {
-                if (GameObject* model = scene.LoadFbx(filePath)) selectedObject = model;
-            }
-            else
-            {
-                Console::LogError("Archivo no soportado: %s", filePath.c_str());
-            }
-        }
-    }
-
+        if (e.drop.data) ImportDroppedFile(e.drop.data);
+        break;
     }
 }
 
@@ -260,11 +225,11 @@ void Editor::DrawMainMenuBar()
             ImGui::Separator();
             if (ImGui::BeginMenu("3D Object"))
             {
-                if (ImGui::MenuItem("Cube")) selectedObject = scene.AddPrimitive("Cube", CreateCubeMesh());
-                if (ImGui::MenuItem("Sphere")) selectedObject = scene.AddPrimitive("Sphere", CreateSphereMesh());
-                if (ImGui::MenuItem("Cylinder")) selectedObject = scene.AddPrimitive("Cylinder", CreateCylinderMesh());
-                if (ImGui::MenuItem("Cone")) selectedObject = scene.AddPrimitive("Cone", CreateConeMesh());
-                if (ImGui::MenuItem("Plane")) selectedObject = scene.AddPrimitive("Plane", CreatePlaneMesh());
+                if (ImGui::MenuItem("Cube")) selectedObject = scene.AddPrimitive("Cube", resources.GetMesh(ResourceManager::UID_CUBE));
+                if (ImGui::MenuItem("Sphere")) selectedObject = scene.AddPrimitive("Sphere", resources.GetMesh(ResourceManager::UID_SPHERE));
+                if (ImGui::MenuItem("Cylinder")) selectedObject = scene.AddPrimitive("Cylinder", resources.GetMesh(ResourceManager::UID_CYLINDER));
+                if (ImGui::MenuItem("Cone")) selectedObject = scene.AddPrimitive("Cone", resources.GetMesh(ResourceManager::UID_CONE));
+                if (ImGui::MenuItem("Plane")) selectedObject = scene.AddPrimitive("Plane", resources.GetMesh(ResourceManager::UID_PLANE));
                 ImGui::EndMenu();
             }
             // La camara nueva se coloca donde esta la del editor y mirando hacia donde mira ella
@@ -345,25 +310,41 @@ void Editor::DrawDockspace()
     ImGui::End();
 }
 
-// Aplica una textura recien cargada (PNG/JPG/TGA/DDS soltada en la ventana) al objeto
-// seleccionado si tiene malla, o al primero con malla si no. Si no hay ninguno, la libera.
-void Editor::AssignDroppedTexture(GLuint newTex, const std::string& filePath)
+// Un archivo soltado en la ventana se copia a Assets/ (si viene de fuera) y se importa a Library.
+// Un FBX se instancia en la escena; una textura se aplica al objeto seleccionado.
+void Editor::ImportDroppedFile(const std::string& filePath)
+{
+    Console::LogInfo("Archivo arrastrado: %s", filePath.c_str());
+    bool supported = false;
+    const ResourceType type = ResourceManager::TypeOfExtension(filePath, supported);
+    if (!supported)
+    {
+        Console::LogError("Archivo no soportado: %s", filePath.c_str());
+        return;
+    }
+
+    const uint64_t uid = resources.ImportExternalFile(filePath);
+    if (uid == 0) return;
+    if (type == ResourceType::Texture)
+        AssignDroppedTexture(uid);
+    else if (GameObject* model = scene.InstantiateModel(uid, resources))
+        selectedObject = model;
+}
+
+// Aplica una textura al objeto seleccionado si tiene malla, o al primero con malla si no.
+void Editor::AssignDroppedTexture(uint64_t textureUid)
 {
     GameObject* target = (selectedObject && selectedObject->HasMesh()) ? selectedObject : nullptr;
     if (!target)
         scene.ForEach([&target](GameObject& o) { if (!target && o.HasMesh()) target = &o; });
-
     if (!target)
     {
-        glDeleteTextures(1, &newTex);   // nadie la va a usar
-        Console::LogInfo("No hay GameObjects con malla para aplicar la textura");
+        Console::LogInfo("No hay GameObjects con malla para aplicar la textura (queda importada en Assets/)");
         return;
     }
-    GameObject& go = *target;
-    ComponentMaterial& material = go.components.Add<ComponentMaterial>();   // lo crea si no tenia
-    const GLuint oldTex = material.textureID;
-    material.textureID = newTex;
-    material.texturePath = filePath;
-    scene.ReleaseTextureIfUnused(oldTex);
-    Console::LogInfo("Textura aplicada a: %s (path: %s)", go.name.c_str(), filePath.c_str());
+
+    ComponentMaterial& material = target->components.Add<ComponentMaterial>();   // lo crea si no tenia
+    material.texture = resources.GetTexture(textureUid);   // la anterior se descarga sola si era su ultima referencia
+    const ResourceManager::Entry* entry = resources.Find(textureUid);
+    Console::LogInfo("Textura aplicada a: %s (%s)", target->name.c_str(), entry ? entry->name.c_str() : "?");
 }
