@@ -57,6 +57,7 @@ private:
     SceneState committed;              // ultimo estado ya confirmado; se apila en undo al cambiar la escena
     bool wantUndo = false, wantRedo = false;
 
+    static GLuint TextureOf(const ObjectState& o);
     static SceneState Capture(const Scene& scene, const GameObject* selected);
     void Apply(SceneState& s, Scene& scene, GameObject*& selected);
 };

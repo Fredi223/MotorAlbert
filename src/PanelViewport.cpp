@@ -71,7 +71,8 @@ void Editor::DrawViewport()
         for (GameObject* goPtr : candidates)
         {
             GameObject& go = *goPtr;
-            if (go.IsHiddenInHierarchy() || !go.HasMesh() || go.meshComp.mesh->vertices.empty()) continue;
+            const ComponentMesh* meshComp = go.ActiveMesh();
+            if (go.IsHiddenInHierarchy() || !meshComp || meshComp->mesh->vertices.empty()) continue;
 
             float tHit = 0.0f;
 

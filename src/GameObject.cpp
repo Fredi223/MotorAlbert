@@ -4,6 +4,18 @@
 #include <random>
 #include <glm/gtc/type_ptr.hpp>
 
+const ComponentMesh* GameObject::ActiveMesh() const
+{
+    const ComponentMesh* m = components.Get<ComponentMesh>();
+    return (m && m->enabled && m->mesh) ? m : nullptr;
+}
+
+GLuint GameObject::ActiveTexture() const
+{
+    const ComponentMaterial* mat = components.Get<ComponentMaterial>();
+    return (mat && mat->enabled) ? mat->textureID : 0;
+}
+
 bool GameObject::IsHiddenInHierarchy() const
 {
     for (const GameObject* go = this; go; go = go->parent)
@@ -28,7 +40,8 @@ void GameObject::UpdateWorld(const glm::mat4& parentWorld)
 {
     worldMatrix = parentWorld * transform.GetMatrix();
 
-    if (!HasMesh())
+    const ComponentMesh* m = ActiveMesh();
+    if (!m)
     {
         worldAabbMin = worldAabbMax = glm::vec3(worldMatrix[3]);
         return;
@@ -38,9 +51,9 @@ void GameObject::UpdateWorld(const glm::mat4& parentWorld)
     glm::vec3 minB(FLT_MAX), maxB(-FLT_MAX);
     for (int i = 0; i < 8; ++i)
     {
-        const glm::vec3 corner((i & 1) ? aabbMax.x : aabbMin.x,
-                               (i & 2) ? aabbMax.y : aabbMin.y,
-                               (i & 4) ? aabbMax.z : aabbMin.z);
+        const glm::vec3 corner((i & 1) ? m->aabbMax.x : m->aabbMin.x,
+                               (i & 2) ? m->aabbMax.y : m->aabbMin.y,
+                               (i & 4) ? m->aabbMax.z : m->aabbMin.z);
         const glm::vec3 world = glm::vec3(worldMatrix * glm::vec4(corner, 1.0f));
         minB = glm::min(minB, world);
         maxB = glm::max(maxB, world);
@@ -51,9 +64,10 @@ void GameObject::UpdateWorld(const glm::mat4& parentWorld)
 
 void GameObject::Draw(GLint uModelLoc) const
 {
-    if (!meshComp.mesh) return;
+    const ComponentMesh* m = ActiveMesh();
+    if (!m) return;
     glUniformMatrix4fv(uModelLoc, 1, GL_FALSE, glm::value_ptr(worldMatrix));
-    meshComp.mesh->Draw();
+    m->mesh->Draw();
 }
 
 static void GrowHierarchyAABB(const GameObject& go, glm::vec3& minB, glm::vec3& maxB, bool& any)

@@ -53,6 +53,7 @@ add_executable(MotorAlbert
     src/Renderer.h
     src/GameObject.cpp
     src/GameObject.h
+    src/Component.h
     src/Transform.h
     src/stb_image.h
     src/vendor/glad/src/glad.c

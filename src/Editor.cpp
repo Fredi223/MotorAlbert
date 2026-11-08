@@ -345,9 +345,10 @@ void Editor::AssignDroppedTexture(GLuint newTex, const std::string& filePath)
         return;
     }
     GameObject& go = *target;
-    const GLuint oldTex = go.texComp.textureID;
-    go.texComp.textureID = newTex;
-    go.texComp.path = filePath;
+    ComponentMaterial& material = go.components.Add<ComponentMaterial>();   // lo crea si no tenia
+    const GLuint oldTex = material.textureID;
+    material.textureID = newTex;
+    material.texturePath = filePath;
     scene.ReleaseTextureIfUnused(oldTex);
     Console::LogInfo("Textura aplicada a: %s (path: %s)", go.name.c_str(), filePath.c_str());
 }

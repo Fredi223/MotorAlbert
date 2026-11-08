@@ -204,7 +204,8 @@ int Renderer::Render(const Scene& scene, const glm::mat4& view, const glm::mat4&
     for (GameObject* goPtr : visibleObjects)
     {
         GameObject& go = *goPtr;
-        if (go.IsHiddenInHierarchy()) continue;
+        const ComponentMesh* meshComp = go.ActiveMesh();   // el componente se puede haber desactivado este frame
+        if (!meshComp || go.IsHiddenInHierarchy()) continue;
 
         if (frustumCulling)
         {
@@ -213,14 +214,14 @@ int Renderer::Render(const Scene& scene, const glm::mat4& view, const glm::mat4&
         }
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, go.texComp.textureID != 0 ? go.texComp.textureID : checkerTexture);
+        glBindTexture(GL_TEXTURE_2D, go.ActiveTexture() != 0 ? go.ActiveTexture() : checkerTexture);
 
         go.Draw(uModelLoc);
         drawnCount++;
 
-        bool drawNormalsForThis = (go.normalsMode == GameObject::NM_ForceOn) ||
-            (go.normalsMode == GameObject::NM_UseGlobal && showNormals);
-        const bool drawFaceNormalsForThis = go.showFaceNormals || showFaceNormals;
+        bool drawNormalsForThis = (meshComp->normalsMode == ComponentMesh::NM_ForceOn) ||
+            (meshComp->normalsMode == ComponentMesh::NM_UseGlobal && showNormals);
+        const bool drawFaceNormalsForThis = meshComp->showFaceNormals || showFaceNormals;
         if (drawNormalsForThis || drawFaceNormalsForThis)
         {
             glUseProgram(normalShaderProgram);
@@ -231,18 +232,18 @@ int Renderer::Render(const Scene& scene, const glm::mat4& view, const glm::mat4&
 
             // Offset proporcional al AABB local de la malla (no un valor fijo),
             // para que se vea razonable tanto en un modelo diminuto como en uno enorme.
-            float localDiag = glm::length(go.aabbMax - go.aabbMin);
+            float localDiag = glm::length(meshComp->aabbMax - meshComp->aabbMin);
             glUniform1f(normalULengthLoc, localDiag * NORMAL_LENGTH_PERCENT);
 
             if (drawNormalsForThis)
             {
                 glUniform3f(normalUColorLoc, 0.0f, 1.0f, 0.0f);
-                go.meshComp.mesh->DrawNormals();
+                meshComp->mesh->DrawNormals();
             }
             if (drawFaceNormalsForThis)
             {
                 glUniform3f(normalUColorLoc, 1.0f, 0.2f, 1.0f);
-                go.meshComp.mesh->DrawFaceNormals();
+                meshComp->mesh->DrawFaceNormals();
             }
             glUseProgram(shaderProgram);
         }

@@ -6,6 +6,13 @@
 
 #include "Scene.h"
 
+// Textura del material del objeto guardado (activo o no: la sigue reteniendo), 0 si no tiene.
+GLuint UndoHistory::TextureOf(const ObjectState& o)
+{
+    const auto* mat = o.data.components.Get<ComponentMaterial>();
+    return mat ? mat->textureID : 0;
+}
+
 void UndoHistory::Reset(const Scene& scene, const GameObject* selected)
 {
     committed = Capture(scene, selected);
@@ -81,13 +88,13 @@ void UndoHistory::Update(Scene& scene, GameObject*& selected)
         // Los estados descartados ya no estan en el historial, asi que UsesTexture no los cuenta.
         for (const SceneState& s : discarded)
             for (const ObjectState& o : s.objects)
-                scene.ReleaseTextureIfUnused(o.data.texComp.textureID);
+                scene.ReleaseTextureIfUnused(TextureOf(o));
     }
 }
 
 bool UndoHistory::UsesTexture(GLuint tex) const
 {
-    auto usesTex = [tex](const ObjectState& o) { return o.data.texComp.textureID == tex; };
+    auto usesTex = [tex](const ObjectState& o) { return TextureOf(o) == tex; };
     auto stateUsesTex = [&](const SceneState& s) { return std::any_of(s.objects.begin(), s.objects.end(), usesTex); };
     return stateUsesTex(committed)
         || std::any_of(undoStack.begin(), undoStack.end(), stateUsesTex)

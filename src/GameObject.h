@@ -7,45 +7,19 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
+#include "Component.h"
 #include "Transform.h"
-#include "ModuleModelLoader.h"
 
-struct TextureComponent {
-    GLuint textureID = 0;
-    std::string path;
-
-    bool operator==(const TextureComponent&) const = default;
-};
-
-struct MeshComponent {
-    MeshPtr mesh;   // nullptr = sin malla (p. ej. un GameObject vacio)
-
-    bool operator==(const MeshComponent&) const = default;
-};
-
-// Datos propios de un GameObject, sin el arbol. Se pueden copiar tal cual: Duplicate y los
-// snapshots del undo copian esto y reconstruyen el arbol aparte.
+// Datos propios de un GameObject, sin el arbol. Se pueden copiar tal cual (los componentes se
+// clonan): Duplicate y los snapshots del undo copian esto y reconstruyen el arbol aparte.
 struct GameObjectData
 {
-    enum NormalsMode
-    {
-        NM_UseGlobal = 0,
-        NM_ForceOn,
-        NM_ForceOff
-    };
-
     uint64_t uid = 0;               // identificador estable (se serializara en lugar de punteros)
     std::string name;
-    Transform transform;            // LOCAL, relativo al padre
-    MeshComponent meshComp;
-    TextureComponent texComp;
-
-    glm::vec3 aabbMin{ 0.0f };      // AABB local de la malla
-    glm::vec3 aabbMax{ 0.0f };
+    Transform transform;            // LOCAL, relativo al padre. Todo GameObject tiene uno.
+    Components components;          // Mesh, Material, Camera... como mucho uno de cada tipo
 
     bool hidden = false;            // oculta tambien a sus hijos (IsHiddenInHierarchy)
-    NormalsMode normalsMode = NM_UseGlobal;
-    bool showFaceNormals = false;   // normales por cara (triangulo) de este objeto
 
     bool operator==(const GameObjectData&) const = default;
 };
@@ -62,7 +36,14 @@ struct GameObject : GameObjectData
     glm::vec3 worldAabbMin{ 0.0f };   // sin malla: el punto de la posicion de mundo
     glm::vec3 worldAabbMax{ 0.0f };
 
-    bool HasMesh() const { return meshComp.mesh != nullptr; }
+    // La malla que cuenta para dibujar, el picking, el octree y los AABB: la del componente Mesh si
+    // existe, esta activo y tiene malla. nullptr en cualquier otro caso.
+    const ComponentMesh* ActiveMesh() const;
+    bool HasMesh() const { return ActiveMesh() != nullptr; }
+
+    // Textura con la que se dibuja: la del componente Material si existe y esta activo; 0 si no
+    // (el renderer pone entonces la checker).
+    GLuint ActiveTexture() const;
 
     // true si el o alguno de sus antecesores esta oculto.
     bool IsHiddenInHierarchy() const;

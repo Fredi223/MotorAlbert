@@ -100,11 +100,13 @@ struct LoadedMesh {
 
 static void SetMeshOn(GameObject& go, const LoadedMesh& m)
 {
-    go.meshComp.mesh = m.mesh;
-    go.aabbMin = m.aabbMin;
-    go.aabbMax = m.aabbMax;
-    go.texComp.textureID = m.texture;
-    go.texComp.path = m.texturePath;
+    ComponentMesh& meshComp = go.components.Add<ComponentMesh>();
+    meshComp.mesh = m.mesh;
+    meshComp.aabbMin = m.aabbMin;
+    meshComp.aabbMax = m.aabbMax;
+    ComponentMaterial& material = go.components.Add<ComponentMaterial>();
+    material.textureID = m.texture;
+    material.texturePath = m.texturePath;
 }
 
 // Un nodo con una sola malla la lleva el mismo; con varias, cada una va en un hijo (un GameObject
@@ -221,9 +223,10 @@ GameObject* Scene::AddPrimitive(const char* name, Mesh mesh)
     auto go = std::make_unique<GameObject>();
     go->uid = GenerateUID();
     go->name = name;
-    go->meshComp.mesh = MakeSharedMesh(std::move(mesh));
-    ComputeAABBFromMesh(*go->meshComp.mesh, go->aabbMin, go->aabbMax);
-    go->texComp.textureID = defaultTexture;
+    ComponentMesh& meshComp = go->components.Add<ComponentMesh>();
+    meshComp.mesh = MakeSharedMesh(std::move(mesh));
+    ComputeAABBFromMesh(*meshComp.mesh, meshComp.aabbMin, meshComp.aabbMax);
+    go->components.Add<ComponentMaterial>().textureID = defaultTexture;
 
     GameObject* raw = AddChild(nullptr, std::move(go));
     RebuildOctree();
@@ -268,7 +271,7 @@ void Scene::Erase(GameObject* go)
     // Las texturas de la rama se liberan cuando ya no esta en la escena (si nadie mas las usa).
     std::vector<GLuint> textures;
     std::function<void(const GameObject&)> collect = [&](const GameObject& o) {
-        textures.push_back(o.texComp.textureID);
+        if (const auto* mat = o.components.Get<ComponentMaterial>()) textures.push_back(mat->textureID);
         for (const auto& child : o.children) collect(*child);
     };
     collect(*go);
@@ -311,7 +314,10 @@ void Scene::ReleaseTextureIfUnused(GLuint tex)
 {
     if (tex == 0 || tex == defaultTexture) return;
     bool inUse = false;
-    ForEach([&](const GameObject& o) { if (o.texComp.textureID == tex) inUse = true; });
+    ForEach([&](const GameObject& o) {
+        const auto* mat = o.components.Get<ComponentMaterial>();
+        if (mat && mat->textureID == tex) inUse = true;
+    });
     if (!inUse && isTextureUsedElsewhere) inUse = isTextureUsedElsewhere(tex);
     if (!inUse) glDeleteTextures(1, &tex);
 }

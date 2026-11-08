@@ -91,7 +91,8 @@ void Editor::DrawConfiguration()
 
             std::vector<GLuint> texIds{ renderer.GetCheckerTexture() };
             scene.ForEach([&texIds](const GameObject& o) {
-                if (o.texComp.textureID != 0) texIds.push_back(o.texComp.textureID);
+                const auto* mat = o.components.Get<ComponentMaterial>();
+                if (mat && mat->textureID != 0) texIds.push_back(mat->textureID);
             });
             std::sort(texIds.begin(), texIds.end());
             texIds.erase(std::unique(texIds.begin(), texIds.end()), texIds.end());
@@ -136,7 +137,7 @@ void Editor::DrawConfiguration()
             std::vector<const Mesh*> meshes;
             scene.ForEach([&](const GameObject& o) {
                 ++objectCount;
-                if (o.HasMesh()) meshes.push_back(o.meshComp.mesh.get());
+                if (const auto* m = o.components.Get<ComponentMesh>(); m && m->mesh) meshes.push_back(m->mesh.get());
             });
             std::sort(meshes.begin(), meshes.end());
             meshes.erase(std::unique(meshes.begin(), meshes.end()), meshes.end());
