@@ -29,15 +29,19 @@ void Editor::DrawResources()
     ImGui::TextDisabled("(refs = GameObjects + snapshots del undo que lo usan)");
 
     const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable |
-        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit;
+        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings;
     if (ImGui::BeginTable("resources", 5, flags))
     {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Type");
+        // Las columnas de la derecha tienen un ancho fijo calculado para su contenido mas largo (con
+        // margen): si no, el nombre, que se estira, se queda casi todo el espacio y las aprieta.
+        const float pad = ImGui::GetStyle().CellPadding.x * 2.0f + 8.0f;
+        const auto width = [pad](const char* widest) { return ImGui::CalcTextSize(widest).x + pad; };
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, width("Texture"));
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Refs");
-        ImGui::TableSetupColumn("UID");
-        ImGui::TableSetupColumn("Library");
+        ImGui::TableSetupColumn("Refs", ImGuiTableColumnFlags_WidthFixed, width("Refs 000"));
+        ImGui::TableSetupColumn("UID", ImGuiTableColumnFlags_WidthFixed, width("18446744073709551615"));
+        ImGui::TableSetupColumn("Library", ImGuiTableColumnFlags_WidthFixed, width("importado"));
         ImGui::TableHeadersRow();
 
         for (const auto& [uid, e] : resources.Entries())
