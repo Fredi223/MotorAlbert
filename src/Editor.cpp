@@ -37,6 +37,7 @@ void Editor::Init(SDL_GLContext context)
     Console::LogInfo("ImGui inicializado (docking, backends SDL3 + OpenGL3)");
 
     history.Reset(scene, selectedObject);   // estado inicial: el primer cambio apilara este en undo
+    SetCurrentScene({});
 }
 
 void Editor::Shutdown()
@@ -147,6 +148,7 @@ void Editor::DrawFrame()
     {
         if (ImGui::IsKeyPressed(ImGuiKey_Z)) { if (io.KeyShift) history.RequestRedo(); else history.RequestUndo(); }
         else if (ImGui::IsKeyPressed(ImGuiKey_Y)) history.RequestRedo();
+        else if (ImGui::IsKeyPressed(ImGuiKey_S)) { if (currentScene.empty()) openSaveScenePopup = true; else SaveScene(currentScene); }
     }
     history.Update(scene, selectedObject);
 
@@ -185,6 +187,14 @@ void Editor::DrawMainMenuBar()
     {
         if (ImGui::BeginMenu("File"))
         {
+            if (ImGui::MenuItem("New Scene")) NewScene();
+            if (ImGui::MenuItem("Open Scene...")) openLoadScenePopup = true;
+            if (ImGui::MenuItem("Save Scene", "Ctrl+S"))
+            {
+                if (currentScene.empty()) openSaveScenePopup = true; else SaveScene(currentScene);
+            }
+            if (ImGui::MenuItem("Save Scene As...")) openSaveScenePopup = true;
+            ImGui::Separator();
             if (ImGui::MenuItem("Exit")) quitRequested = true;
             ImGui::EndMenu();
         }
@@ -257,6 +267,7 @@ void Editor::DrawMainMenuBar()
 
         ImGui::EndMainMenuBar();
     }
+    DrawSceneFilePopups();
     if (showAbout)
     {
         ImGui::Begin("About", &showAbout);

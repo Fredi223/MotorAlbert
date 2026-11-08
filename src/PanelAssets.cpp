@@ -66,6 +66,30 @@ void Editor::DrawAssetNode(const AssetNode& node)
         return;
     }
 
+    // Las escenas no son recursos (no pasan por Library): se abren tal cual.
+    if (ResourceManager::PathFromUtf8(node.assetPath).extension() == ".scene")
+    {
+        ImGui::TreeNodeEx(node.assetPath.c_str(), ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen |
+            ImGuiTreeNodeFlags_SpanAvailWidth, "%s  [Scene]", node.name.c_str());
+        if (ImGui::IsItemHovered())
+        {
+            ImGui::SetTooltip("Doble clic: abrir la escena (se pierden los cambios sin guardar)");
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) LoadScene(node.assetPath);
+        }
+        if (ImGui::BeginPopupContextItem())
+        {
+            if (ImGui::MenuItem("Open")) LoadScene(node.assetPath);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Delete..."))
+            {
+                assetToDelete = node.assetPath;
+                openDeleteAssetPopup = true;
+            }
+            ImGui::EndPopup();
+        }
+        return;
+    }
+
     const uint64_t uid = resources.FindByAssetPath(node.assetPath);
     const ResourceManager::Entry* entry = uid ? resources.Find(uid) : nullptr;
     if (!entry)
@@ -128,6 +152,9 @@ void Editor::DrawAssetNode(const AssetNode& node)
 void Editor::DeleteAsset(const std::string& assetPath)
 {
     const std::vector<uint64_t> removed = resources.DeleteAsset(assetPath);
+    assetTreeDirty = true;
+    if (assetPath == currentScene) SetCurrentScene({});   // la escena abierta queda sin archivo
+    if (removed.empty()) return;   // no era un recurso (p. ej. un .scene): nadie lo usa y el undo no cambia
     const std::set<uint64_t> gone(removed.begin(), removed.end());
 
     // Los GameObjects que usaban sus mallas o texturas se quedan sin ellas (la checker / sin malla).

@@ -21,6 +21,7 @@ struct GameObject;
 //
 // Los metodos estan repartidos en varios .cpp segun lo que dibujan:
 //   Editor.cpp             Init/Shutdown, eventos, orden del frame, menu y dockspace
+//   EditorSceneFile.cpp    nueva escena, guardar y abrir (.scene)
 //   EditorCamera.cpp       input de la camara libre/orbital, captura del raton, encuadre (F)
 //   PanelInspector.cpp     Inspector
 //   PanelConfiguration.cpp Configuration
@@ -67,6 +68,16 @@ private:
     void DrawDockspace();
     void ImportDroppedFile(const std::string& filePath);
     void AssignDroppedTexture(uint64_t textureUid);
+
+    // --- EditorSceneFile.cpp: File > New / Open / Save Scene ---
+    // Las escenas son .scene (JSON, SceneSerializer) en Assets/Scenes/. Rutas relativas a Assets/.
+    // Abrir o crear una escena suelta la seleccion y vacia el historial de undo (un snapshot no puede
+    // deshacer un cambio de escena entero).
+    void NewScene();
+    bool SaveScene(const std::string& assetPath);
+    bool LoadScene(const std::string& assetPath);
+    void DrawSceneFilePopups();
+    void SetCurrentScene(const std::string& assetPath);   // tambien pone el titulo de la ventana
 
     // --- EditorCamera.cpp ---
     void UpdateCamera();
@@ -178,4 +189,10 @@ private:
     bool assetTreeDirty = true;
     std::string assetToDelete;   // pendiente de confirmar en el popup
     bool openDeleteAssetPopup = false;
+
+    // Escena abierta (relativa a Assets/, p. ej. "Scenes/Street.scene"); vacia = sin guardar todavia
+    std::string currentScene;
+    bool openSaveScenePopup = false;
+    bool openLoadScenePopup = false;
+    char sceneNameBuf[128] = { 0 };
 };
