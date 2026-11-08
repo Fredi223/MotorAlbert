@@ -131,6 +131,7 @@ void Editor::DrawFrame()
     DrawDockspace();
     DrawInspector();
     DrawConfiguration();
+    DrawResources();
 
     // Matrices de mundo al dia con lo editado este frame (Inspector) antes de dibujar.
     scene.UpdateTransforms();
@@ -200,6 +201,7 @@ void Editor::DrawMainMenuBar()
             ImGui::MenuItem("Inspector", nullptr, &showInspector);
             ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy);
             ImGui::MenuItem("Configuration", nullptr, &showConfig);
+            ImGui::MenuItem("Resources", nullptr, &showResources);
             ImGui::MenuItem("Normals", nullptr, &renderer.showNormals);
             ImGui::MenuItem("Face Normals", nullptr, &renderer.showFaceNormals);
             if (ImGui::BeginMenu("Debug Draw"))
@@ -303,6 +305,7 @@ void Editor::DrawDockspace()
         ImGui::DockBuilderDockWindow("Inspector", dock_right);       // derecha
 
         ImGui::DockBuilderDockWindow("Configuration", dock_bottom);
+        ImGui::DockBuilderDockWindow("Resources", dock_bottom);
         ImGui::DockBuilderDockWindow("Console", dock_bottom);        // abajo
         ImGui::DockBuilderFinish(dockspace_id);
     }

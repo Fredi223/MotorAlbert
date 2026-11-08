@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <glm/gtc/type_ptr.hpp>
 
 #include "imgui.h"
@@ -50,16 +51,64 @@ static const char* ResourceName(const ResourceManager& resources, uint64_t uid)
     return e ? e->name.c_str() : "<sin recurso>";
 }
 
-static void DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& renderer, const ResourceManager& resources)
+// Desplegable con los recursos de un tipo, que ademas acepta un recurso arrastrado (desde el panel
+// Resources o Assets). Devuelve true si se ha elegido otro; chosen = su UID (0 = ninguno).
+static bool ResourcePicker(const char* label, ResourceType type, uint64_t current,
+    const ResourceManager& resources, uint64_t& chosen)
 {
+    bool picked = false;
+    const char* preview = current ? ResourceName(resources, current) : "<none>";
+    if (ImGui::BeginCombo(label, preview, ImGuiComboFlags_HeightLarge))
+    {
+        if (ImGui::Selectable("<none>", current == 0)) { chosen = 0; picked = true; }
+        for (const auto& [uid, entry] : resources.Entries())
+        {
+            if (entry.type != type) continue;
+            ImGui::PushID(&entry);
+            // Los cargados en memoria se marcan con sus referencias.
+            const std::string text = entry.IsLoaded()
+                ? entry.name + "  [" + std::to_string(entry.RefCount()) + " refs]"
+                : entry.name;
+            if (ImGui::Selectable(text.c_str(), uid == current)) { chosen = uid; picked = true; }
+            if (uid == current) ImGui::SetItemDefaultFocus();
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(Editor::DND_RESOURCE))
+        {
+            uint64_t uid = 0;
+            std::memcpy(&uid, payload->Data, sizeof(uid));
+            const ResourceManager::Entry* e = resources.Find(uid);
+            if (e && e->type == type) { chosen = uid; picked = true; }
+            else Console::LogError("Ese recurso no es de tipo %s", type == ResourceType::Mesh ? "malla" : "textura");
+        }
+        ImGui::EndDragDropTarget();
+    }
+    return picked && chosen != current;
+}
+
+// Devuelve true si cambia la malla (cambia el AABB: hay que reconstruir el octree).
+static bool DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& renderer, ResourceManager& resources)
+{
+    bool changed = false;
+    uint64_t chosen = 0;
+    if (ResourcePicker("Mesh", ResourceType::Mesh, comp.mesh ? comp.mesh->uid : 0, resources, chosen))
+    {
+        comp.mesh = chosen ? resources.GetMesh(chosen) : nullptr;   // la anterior se descarga si era su ultima referencia
+        Console::LogInfo("Malla de %s: %s", go.name.c_str(), chosen ? ResourceName(resources, chosen) : "<none>");
+        changed = true;
+    }
+
     if (!comp.mesh)
     {
         ImGui::TextDisabled("Sin malla asignada");
-        return;
+        return changed;
     }
 
     const Mesh& mesh = *comp.mesh;
-    ImGui::TextWrapped("Resource: %s", ResourceName(resources, mesh.uid));
     ImGui::TextDisabled("UID %llu | refs: %ld", (unsigned long long)mesh.uid, comp.mesh.use_count());
     ImGui::Text("Vertices: %u | Indices: %u", mesh.vertexCount, mesh.indexCount);
 
@@ -73,10 +122,18 @@ static void DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& 
     ImGui::Checkbox("Face normals", &comp.showFaceNormals);
     ImGui::TextDisabled("Global Normals: %s | Face Normals: %s",
         renderer.showNormals ? "ON" : "OFF", renderer.showFaceNormals ? "ON" : "OFF");
+    return changed;
 }
 
-static void DrawMaterial(ComponentMaterial& comp, const GameObject& go, const ResourceManager& resources)
+static void DrawMaterial(ComponentMaterial& comp, const GameObject& go, ResourceManager& resources)
 {
+    uint64_t chosen = 0;
+    if (ResourcePicker("Texture", ResourceType::Texture, comp.texture ? comp.texture->uid : 0, resources, chosen))
+    {
+        comp.texture = chosen ? resources.GetTexture(chosen) : nullptr;   // la anterior se descarga si era su ultima referencia
+        Console::LogInfo("Textura de %s: %s", go.name.c_str(), chosen ? ResourceName(resources, chosen) : "<none>");
+    }
+
     if (!comp.texture)
     {
         ImGui::TextDisabled("Sin textura (se dibuja con la checker)");
@@ -84,17 +141,10 @@ static void DrawMaterial(ComponentMaterial& comp, const GameObject& go, const Re
     }
 
     const Texture& tex = *comp.texture;
-    ImGui::TextWrapped("Resource: %s", ResourceName(resources, tex.uid));
     ImGui::TextDisabled("UID %llu | refs: %ld | GL id %u", (unsigned long long)tex.uid, comp.texture.use_count(), tex.id);
     static const char* formats[] = { "RGBA8", "DXT1", "DXT3", "DXT5" };
     ImGui::Text("Size: %u x %u (%s)", tex.width, tex.height, formats[static_cast<int>(tex.format)]);
     ImGui::Image((ImTextureID)(intptr_t)tex.id, ImVec2(128, 128), ImVec2(0, 1), ImVec2(1, 0));
-
-    if (ImGui::Button("Remove Texture"))
-    {
-        comp.texture.reset();   // si era la ultima referencia, la textura se descarga
-        Console::LogInfo("Texture removed from %s", go.name.c_str());
-    }
 }
 
 void Editor::DrawLensFields(ComponentCamera& lens)
@@ -175,7 +225,7 @@ void Editor::DrawInspector()
             ImGui::BeginDisabled(!comp.enabled);
             switch (type)
             {
-            case Component::Type::Mesh:     DrawMesh(static_cast<ComponentMesh&>(comp), go, renderer, resources); break;
+            case Component::Type::Mesh:     scene.structureDirty |= DrawMesh(static_cast<ComponentMesh&>(comp), go, renderer, resources); break;
             case Component::Type::Material: DrawMaterial(static_cast<ComponentMaterial&>(comp), go, resources); break;
             case Component::Type::Camera:   DrawCamera(static_cast<ComponentCamera&>(comp), go, scene); break;
             default: break;

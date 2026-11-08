@@ -49,6 +49,7 @@ add_executable(MotorAlbert
     src/PanelConfiguration.cpp
     src/PanelHierarchy.cpp
     src/PanelInspector.cpp
+    src/PanelResources.cpp
     src/PanelViewport.cpp
     src/FrameTiming.cpp
     src/FrameTiming.h

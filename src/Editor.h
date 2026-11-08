@@ -24,6 +24,7 @@ struct GameObject;
 //   EditorCamera.cpp       input de la camara libre/orbital, captura del raton, encuadre (F)
 //   PanelInspector.cpp     Inspector
 //   PanelConfiguration.cpp Configuration
+//   PanelResources.cpp     Resources (recursos importados y sus referencias)
 //   PanelHierarchy.cpp     Hierarchy y popup de renombrar
 //   PanelViewport.cpp      Viewport y picking
 class Editor
@@ -42,6 +43,10 @@ public:
 
     // Escape o File > Exit.
     bool WantsToQuit() const { return quitRequested; }
+
+    // Payload de drag & drop de un recurso (uint64_t con su UID): lo arrastran los paneles Resources y
+    // Assets y lo aceptan los campos Mesh y Texture del Inspector.
+    static constexpr const char* DND_RESOURCE = "DND_RESOURCE";
 
     // FOV, near y far de una camara (la del editor en Configuration y las de juego en el Inspector).
     static void DrawLensFields(ComponentCamera& lens);
@@ -63,6 +68,7 @@ private:
     // --- Paneles ---
     void DrawInspector();
     void DrawConfiguration();
+    void DrawResources();
     void DrawHierarchy();
     void DrawViewport();
 
@@ -110,6 +116,7 @@ private:
     bool showInspector = true;
     bool showHierarchy = true;
     bool showConfig = true;
+    bool showResources = true;
     bool showAbout = false;
 
     // Viewport: lo calcula DrawViewport, asi que el resto del frame usa el valor del frame anterior
@@ -143,4 +150,7 @@ private:
     int texFilter = 0;   // 0 = linear + mipmaps, 1 = nearest
     int texWrap = 0;     // 0 = repeat, 1 = clamp, 2 = mirrored repeat
     std::vector<float> plotBuf;
+
+    // Resources
+    bool onlyLoadedResources = false;
 };
