@@ -8,6 +8,7 @@
 #include "ResourceManager.h"
 #include "Scene.h"
 #include "SceneSerializer.h"
+#include "Simulation.h"
 #include "UndoHistory.h"
 
 namespace fs = std::filesystem;
@@ -24,6 +25,7 @@ void Editor::SetCurrentScene(const std::string& assetPath)
 
 void Editor::NewScene()
 {
+    if (!simulation.IsStopped()) { Console::LogError("Para la simulacion (Stop) antes de crear una escena nueva"); return; }
     selectedObject = nullptr;
     scene.Clear();
     scene.RebuildOctree();   // el render de este frame no debe ver los punteros de la escena anterior
@@ -35,6 +37,8 @@ void Editor::NewScene()
 
 bool Editor::SaveScene(const std::string& assetPath)
 {
+    // En Play se guardaria el estado de la simulacion, no la escena que se esta editando.
+    if (!simulation.IsStopped()) { Console::LogError("Para la simulacion (Stop) antes de guardar la escena"); return false; }
     const fs::path file = ResourceManager::PathFromUtf8(resources.AssetsDir()) / ResourceManager::PathFromUtf8(assetPath);
     if (!SceneSerializer::SaveToFile(scene, file)) return false;
     SetCurrentScene(assetPath);
@@ -45,6 +49,7 @@ bool Editor::SaveScene(const std::string& assetPath)
 
 bool Editor::LoadScene(const std::string& assetPath)
 {
+    if (!simulation.IsStopped()) { Console::LogError("Para la simulacion (Stop) antes de abrir otra escena"); return false; }
     const fs::path file = ResourceManager::PathFromUtf8(resources.AssetsDir()) / ResourceManager::PathFromUtf8(assetPath);
     selectedObject = nullptr;   // si falla la escena no cambia, pero sin seleccion nunca hay un puntero colgando
     if (!SceneSerializer::LoadFromFile(file, scene, resources)) return false;

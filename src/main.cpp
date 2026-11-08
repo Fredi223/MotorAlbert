@@ -12,6 +12,7 @@
 #include "Renderer.h"
 #include "ResourceManager.h"
 #include "Scene.h"
+#include "Simulation.h"
 #include "UndoHistory.h"
 
 // ============================================================
@@ -102,6 +103,7 @@ int main(int argc, char* argv[])
     // anade algo (la escena Street inicial, drag & drop o una primitiva).
     Scene scene;
     UndoHistory history;
+    Simulation simulation;
 
     // Assets/ vive junto al ejecutable (CMake la copia ahi al compilar) y Library/ se crea a su lado:
     // asi funciona igual desde build/ que desde la carpeta de entrega. Init importa lo que falte.
@@ -117,7 +119,7 @@ int main(int argc, char* argv[])
     else
         Console::LogError("No se encuentra Assets/Street/Street environment_V01.FBX");
 
-    Editor editor(window, scene, resources, history, renderer, timing);
+    Editor editor(window, scene, resources, simulation, history, renderer, timing);
     editor.Init(context);
 
     Console::LogInfo("Iniciando bucle principal");

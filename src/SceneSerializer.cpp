@@ -55,6 +55,9 @@ namespace
             j["cullingCamera"] = cam.cullingCamera;
             break;
         }
+        case Component::Type::Rotator:
+            j["degreesPerSecond"] = Vec3ToJson(static_cast<const ComponentRotator&>(c).degreesPerSecond);
+            break;
         default: break;
         }
         return j;
@@ -98,6 +101,12 @@ namespace
             cam.farPlane = j.value("far", defaults.farPlane);
             cam.cullingCamera = j.value("cullingCamera", false);
             added = &cam;
+        }
+        else if (type == Component::TypeName(Component::Type::Rotator))
+        {
+            auto& rotator = go.components.Add<ComponentRotator>();
+            rotator.degreesPerSecond = Vec3FromJson(j.value("degreesPerSecond", json()), ComponentRotator{}.degreesPerSecond);
+            added = &rotator;
         }
         else
         {

@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include <algorithm>
 
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
@@ -9,11 +10,12 @@
 #include "Logger.h"
 #include "Renderer.h"
 #include "Scene.h"
+#include "Simulation.h"
 #include "ResourceManager.h"
 #include "UndoHistory.h"
 
-Editor::Editor(SDL_Window* window, Scene& scene, ResourceManager& resources, UndoHistory& history, Renderer& renderer, FrameTiming& timing)
-    : window(window), scene(scene), resources(resources), history(history), renderer(renderer), timing(timing)
+Editor::Editor(SDL_Window* window, Scene& scene, ResourceManager& resources, Simulation& simulation, UndoHistory& history, Renderer& renderer, FrameTiming& timing)
+    : window(window), scene(scene), resources(resources), simulation(simulation), history(history), renderer(renderer), timing(timing)
 {
 }
 
@@ -135,6 +137,9 @@ void Editor::DrawFrame()
     DrawResources();
     DrawAssets();
 
+    // Logica de juego (solo en Play): antes del render, para dibujar ya el estado de este frame.
+    simulation.Tick(scene, timing.LastFrameSeconds());
+
     // Matrices de mundo al dia con lo editado este frame (Inspector) antes de dibujar.
     scene.UpdateTransforms();
     renderStats = renderer.Render(scene, view, projection);
@@ -143,14 +148,16 @@ void Editor::DrawFrame()
     DrawHierarchy();
 
     // Ctrl+Z / Ctrl+Y (o Ctrl+Shift+Z). Va antes de reconstruir el octree porque deshacer
-    // sustituye la escena entera.
-    if (io.KeyCtrl && !io.WantTextInput)
+    // sustituye la escena entera. En Play no hay undo: lo que cambia la simulacion no son ediciones
+    // (Stop ya lo deshace todo).
+    const bool editing = simulation.IsStopped();
+    if (editing && io.KeyCtrl && !io.WantTextInput)
     {
         if (ImGui::IsKeyPressed(ImGuiKey_Z)) { if (io.KeyShift) history.RequestRedo(); else history.RequestUndo(); }
         else if (ImGui::IsKeyPressed(ImGuiKey_Y)) history.RequestRedo();
         else if (ImGui::IsKeyPressed(ImGuiKey_S)) { if (currentScene.empty()) openSaveScenePopup = true; else SaveScene(currentScene); }
     }
-    history.Update(scene, selectedObject);
+    if (editing) history.Update(scene, selectedObject);
 
     // Reconstruir el octree justo aqui (y no al final del frame): el panel Viewport hace picking
     // consultando el octree en este mismo frame.
@@ -183,6 +190,11 @@ void Editor::DrawMainMenuBar()
     // ============================================================
     // Barra de menú principal
     // ============================================================
+    // En Play la barra se tine (azul; naranja en pausa) para que se vea que nada de lo que se haga se conserva.
+    const bool tinted = !simulation.IsStopped();
+    if (tinted)
+        ImGui::PushStyleColor(ImGuiCol_MenuBarBg, simulation.GetState() == Simulation::State::Paused
+            ? ImVec4(0.45f, 0.30f, 0.05f, 1.0f) : ImVec4(0.10f, 0.25f, 0.50f, 1.0f));
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("File"))
@@ -201,8 +213,8 @@ void Editor::DrawMainMenuBar()
 
         if (ImGui::BeginMenu("Edit"))
         {
-            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, history.CanUndo())) history.RequestUndo();
-            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, history.CanRedo())) history.RequestRedo();
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, simulation.IsStopped() && history.CanUndo())) history.RequestUndo();
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, simulation.IsStopped() && history.CanRedo())) history.RequestRedo();
             ImGui::EndMenu();
         }
 
@@ -265,8 +277,10 @@ void Editor::DrawMainMenuBar()
             ImGui::EndMenu();
         }
 
+        DrawPlayControls();
         ImGui::EndMainMenuBar();
     }
+    if (tinted) ImGui::PopStyleColor();
     DrawSceneFilePopups();
     if (showAbout)
     {
@@ -365,4 +379,64 @@ void Editor::AssignDroppedTexture(uint64_t textureUid)
     material.texture = resources.GetTexture(textureUid);   // la anterior se descarga sola si era su ultima referencia
     const ResourceManager::Entry* entry = resources.Find(textureUid);
     Console::LogInfo("Textura aplicada a: %s (%s)", target->name.c_str(), entry ? entry->name.c_str() : "?");
+}
+
+// Controles de la simulacion, centrados en la barra de menu. Van antes del render: Stop sustituye la
+// escena (y reconstruye el octree), asi que el render de este frame ya ve la escena restaurada.
+void Editor::DrawPlayControls()
+{
+    const Simulation::State state = simulation.GetState();
+    const ImGuiIO& io = ImGui::GetIO();
+
+    // Atajos: Ctrl+P = Play/Stop, Ctrl+Shift+P = Pause/continuar.
+    bool togglePlay = false, togglePause = false;
+    if (io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_P, false))
+        (io.KeyShift ? togglePause : togglePlay) = true;
+
+    const float buttonsWidth = 260.0f;
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), (ImGui::GetWindowWidth() - buttonsWidth) * 0.5f));
+
+    ImGui::BeginDisabled(state == Simulation::State::Playing);
+    if (ImGui::Button("Play")) simulation.Play(scene);
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(state != Simulation::State::Playing);
+    if (ImGui::Button("Pause")) simulation.Pause();
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(state != Simulation::State::Paused);
+    if (ImGui::Button("Step")) simulation.Step();
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(state == Simulation::State::Stopped);
+    if (ImGui::Button("Stop")) StopSimulation();
+    ImGui::EndDisabled();
+
+    if (togglePlay)
+    {
+        if (state == Simulation::State::Stopped) simulation.Play(scene); else StopSimulation();
+    }
+    else if (togglePause)
+    {
+        if (state == Simulation::State::Playing) simulation.Pause();
+        else if (state == Simulation::State::Paused) simulation.Play(scene);
+    }
+
+    ImGui::SetNextItemWidth(60.0f);
+    ImGui::DragFloat("##timescale", &simulation.timeScale, 0.01f, 0.0f, 10.0f, "x%.2f");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Escala del tiempo de juego");
+    if (state == Simulation::State::Stopped)
+        ImGui::TextDisabled("Edit");
+    else
+        ImGui::Text("%s  t = %.2f s  (%llu frames)", state == Simulation::State::Paused ? "Paused" : "Playing",
+            simulation.GameTime(), (unsigned long long)simulation.GameFrames());
+}
+
+void Editor::StopSimulation()
+{
+    const uint64_t selectedUid = selectedObject ? selectedObject->uid : 0;
+    selectedObject = nullptr;   // Stop sustituye todos los GameObjects
+    if (!simulation.Stop(scene, resources)) return;
+
+    // La escena restaurada tiene los mismos UIDs que antes del Play: se recupera la seleccion y el
+    // historial de undo sigue valido (sus snapshots son de antes del Play).
+    selectedObject = scene.FindByUid(selectedUid);
+    history.Reset(scene, selectedObject);
 }

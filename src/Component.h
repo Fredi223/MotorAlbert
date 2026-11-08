@@ -19,7 +19,7 @@
 // en PanelInspector.cpp, asi el motor no depende de ImGui.
 struct Component
 {
-    enum class Type { Mesh, Material, Camera, Count };
+    enum class Type { Mesh, Material, Camera, Rotator, Count };
 
     virtual ~Component() = default;
 
@@ -39,6 +39,7 @@ struct Component
         case Type::Mesh:     return "Mesh";
         case Type::Material: return "Material";
         case Type::Camera:   return "Camera";
+        case Type::Rotator:  return "Rotator";
         default:             return "?";
         }
     }
@@ -101,6 +102,16 @@ struct ComponentCamera : ComponentOf<ComponentCamera, Component::Type::Camera>
     bool operator==(const ComponentCamera&) const = default;
 };
 
+// Comportamiento de juego minimo: gira el objeto (su rotacion LOCAL) a velocidad constante. Solo se
+// mueve durante la simulacion (Play), con el tiempo de juego: sirve para ver que Play/Pause/Stop
+// funcionan y que Stop devuelve la escena a su estado inicial.
+struct ComponentRotator : ComponentOf<ComponentRotator, Component::Type::Rotator>
+{
+    glm::vec3 degreesPerSecond = glm::vec3(0.0f, 90.0f, 0.0f);   // por eje (X, Y, Z)
+
+    bool operator==(const ComponentRotator&) const = default;
+};
+
 // Lista de componentes de un GameObject. Se copia en profundidad (clonando cada componente) y se
 // compara componente a componente: por eso GameObjectData sigue siendo copiable y comparable con
 // ==, que es lo que usan Duplicate y el undo.
@@ -155,6 +166,7 @@ public:
         case Component::Type::Mesh:     Add<ComponentMesh>(); break;
         case Component::Type::Material: Add<ComponentMaterial>(); break;
         case Component::Type::Camera:   Add<ComponentCamera>(); break;
+        case Component::Type::Rotator:  Add<ComponentRotator>(); break;
         default: break;
         }
     }

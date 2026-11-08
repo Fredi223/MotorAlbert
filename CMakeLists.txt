@@ -61,6 +61,8 @@ add_executable(MotorAlbert
     src/ResourceManager.h
     src/SceneSerializer.cpp
     src/SceneSerializer.h
+    src/Simulation.cpp
+    src/Simulation.h
     src/Uid.h
     src/GameObject.cpp
     src/GameObject.h

@@ -170,6 +170,12 @@ static void DrawCamera(ComponentCamera& comp, const GameObject& go, Scene& scene
     ImGui::TextDisabled("Mira hacia su -Z local. El aspecto es el del viewport.");
 }
 
+static void DrawRotator(ComponentRotator& comp)
+{
+    ImGui::DragFloat3("Deg / s (X Y Z)", &comp.degreesPerSecond.x, 1.0f, -3600.0f, 3600.0f, "%.1f");
+    ImGui::TextDisabled("Solo gira durante Play (con el tiempo de juego).");
+}
+
 void Editor::DrawInspector()
 {
     if (!showInspector) return;
@@ -228,6 +234,7 @@ void Editor::DrawInspector()
             case Component::Type::Mesh:     scene.structureDirty |= DrawMesh(static_cast<ComponentMesh&>(comp), go, renderer, resources); break;
             case Component::Type::Material: DrawMaterial(static_cast<ComponentMaterial&>(comp), go, resources); break;
             case Component::Type::Camera:   DrawCamera(static_cast<ComponentCamera&>(comp), go, scene); break;
+            case Component::Type::Rotator:  DrawRotator(static_cast<ComponentRotator&>(comp)); break;
             default: break;
             }
             ImGui::EndDisabled();

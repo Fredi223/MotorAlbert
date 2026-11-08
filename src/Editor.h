@@ -13,6 +13,7 @@ class FrameTiming;
 class Renderer;
 class ResourceManager;
 class Scene;
+class Simulation;
 class UndoHistory;
 struct GameObject;
 
@@ -32,7 +33,7 @@ struct GameObject;
 class Editor
 {
 public:
-    Editor(SDL_Window* window, Scene& scene, ResourceManager& resources, UndoHistory& history, Renderer& renderer, FrameTiming& timing);
+    Editor(SDL_Window* window, Scene& scene, ResourceManager& resources, Simulation& simulation, UndoHistory& history, Renderer& renderer, FrameTiming& timing);
 
     // Crea el contexto de ImGui y toma el estado actual de la escena como inicio del undo.
     void Init(SDL_GLContext context);
@@ -65,6 +66,10 @@ public:
 private:
     // --- Editor.cpp ---
     void DrawMainMenuBar();
+    // Botones Play / Pause / Step / Stop, escala de tiempo y tiempo de juego (en la barra de menu).
+    // Atajos: Ctrl+P = Play/Stop, Ctrl+Shift+P = Pause/continuar.
+    void DrawPlayControls();
+    void StopSimulation();   // restaura la escena y recupera la seleccion por UID
     void DrawDockspace();
     void ImportDroppedFile(const std::string& filePath);
     void AssignDroppedTexture(uint64_t textureUid);
@@ -124,6 +129,7 @@ private:
     SDL_Window* window;
     Scene& scene;
     ResourceManager& resources;
+    Simulation& simulation;
     UndoHistory& history;
     Renderer& renderer;
     FrameTiming& timing;
