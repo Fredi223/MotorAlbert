@@ -4,11 +4,13 @@
 #include <string>
 #include <vector>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 
 struct Mesh {
     GLuint VAO = 0;
     GLuint VBO = 0;
     GLuint EBO = 0;
+    std::string name;          // nombre de la malla en el archivo (vacio en las primitivas)
     std::string texturePath;   // ruta de la textura difusa tal como la guarda el material del FBX
     unsigned int indexCount = 0;
     unsigned int vertexCount = 0;
@@ -28,12 +30,27 @@ struct Mesh {
     void Destroy();
 };
 
-// outUnitScale (opcional): factor de conversion a metros deducido del
-// UnitScaleFactor de los metadatos de Assimp (fallback 0.01 si el FBX
-// no trae esa metadata, asumiendo centimetros).
 // Malla compartida: la poseen los GameObject que la usan (duplicados incluidos) y los snapshots del
 // undo. Sus buffers de GPU se liberan cuando la suelta el ultimo (MakeSharedMesh pone ese deleter).
 using MeshPtr = std::shared_ptr<Mesh>;
 MeshPtr MakeSharedMesh(Mesh&& mesh);
 
-std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale = nullptr);
+// Nodo de la jerarquia de un modelo: transformacion local (relativa al padre) y las mallas que lleva
+// (indices en Model::meshes).
+struct ModelNode {
+    std::string name;
+    glm::mat4 transform{ 1.0f };
+    std::vector<unsigned int> meshIndices;
+    std::vector<ModelNode> children;
+};
+
+struct Model {
+    std::vector<Mesh> meshes;   // ya subidas a la GPU, con los vertices en el espacio local de su nodo
+    ModelNode root;
+    // Factor de conversion a metros deducido del UnitScaleFactor de los metadatos de Assimp
+    // (0.01 si el FBX no lo trae, asumiendo centimetros).
+    float unitScale = 0.01f;
+};
+
+// Carga un modelo con Assimp conservando su jerarquia de nodos. Sin mallas si falla.
+Model LoadModel(const std::string& path);

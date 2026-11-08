@@ -1,4 +1,5 @@
 #include "ModuleModelLoader.h"
+#include <assimp/config.h>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -141,15 +142,15 @@ void Mesh::Destroy()
     indices.clear();
 }
 
+// Los vertices se guardan en el espacio local de la malla: la transformacion de su nodo la lleva el
+// GameObject (ver LoadModel / Scene::LoadFbx).
 static void ProcessAIMesh(
     const aiMesh* ai_mesh,
     const aiScene* scene,
-    const aiNode* node,
     std::vector<Mesh>& outMeshes)
 {
     Mesh mesh;
-
-    glm::mat4 nodeTransform = AiToGlm(node->mTransformation);
+    mesh.name = ai_mesh->mName.C_Str();
 
     // --- Material / textura ---
     const aiMaterial* material = scene->mMaterials[ai_mesh->mMaterialIndex];
@@ -172,8 +173,7 @@ static void ProcessAIMesh(
     {
         for (unsigned int v = 0; v < ai_mesh->mNumVertices; ++v)
         {
-            const glm::vec3 p = glm::vec3(nodeTransform * glm::vec4(
-                ai_mesh->mVertices[v].x, ai_mesh->mVertices[v].y, ai_mesh->mVertices[v].z, 1.0f));
+            const glm::vec3 p(ai_mesh->mVertices[v].x, ai_mesh->mVertices[v].y, ai_mesh->mVertices[v].z);
             posMin = glm::min(posMin, p);
             posMax = glm::max(posMax, p);
         }
@@ -183,13 +183,8 @@ static void ProcessAIMesh(
 
     for (unsigned int v = 0; v < ai_mesh->mNumVertices; ++v)
     {
-        // POSICION (con la transformacion del nodo aplicada)
-        glm::vec4 p = nodeTransform * glm::vec4(
-            ai_mesh->mVertices[v].x,
-            ai_mesh->mVertices[v].y,
-            ai_mesh->mVertices[v].z,
-            1.0f
-        );
+        // POSICION
+        const glm::vec3 p(ai_mesh->mVertices[v].x, ai_mesh->mVertices[v].y, ai_mesh->mVertices[v].z);
 
         mesh.vertices.push_back(p.x);
         mesh.vertices.push_back(p.y);
@@ -249,28 +244,49 @@ static void ProcessAIMesh(
 }
 
 
-std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
+// Copia la rama de nodos de Assimp. Los nodos sin ninguna malla en toda su rama (camaras, luces,
+// ayudantes del exportador) se descartan: no aportan nada a la escena. Devuelve false si se descarta.
+static bool ProcessNode(const aiNode* aiNode, ModelNode& out)
 {
-    std::vector<Mesh> outMeshes;
+    out.name = aiNode->mName.C_Str();
+    out.transform = AiToGlm(aiNode->mTransformation);
+    out.meshIndices.assign(aiNode->mMeshes, aiNode->mMeshes + aiNode->mNumMeshes);
+
+    for (unsigned int i = 0; i < aiNode->mNumChildren; ++i)
+    {
+        ModelNode child;
+        if (ProcessNode(aiNode->mChildren[i], child))
+            out.children.push_back(std::move(child));
+    }
+    return !out.meshIndices.empty() || !out.children.empty();
+}
+
+Model LoadModel(const std::string& path)
+{
+    Model model;
     Assimp::Importer importer;
 
+    // Sin esto, Assimp conserva los pivotes de FBX como nodos intermedios ("$AssimpFbx$_Rotation"...),
+    // que llenarian la Hierarchy de objetos que el usuario no ha creado. Se funden en el nodo real.
+    importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+
     Console::LogInfo("Assimp: importando %s", path.c_str());
+    // Sin aiProcess_PreTransformVertices: los nodos (y su transformacion) se conservan, asi cada
+    // pieza del modelo es un GameObject que gira y escala alrededor de su propio pivote.
     const aiScene* scene = importer.ReadFile(
         path,
         aiProcess_Triangulate |
         aiProcess_GenSmoothNormals |
         aiProcess_CalcTangentSpace |
         aiProcess_JoinIdenticalVertices |
-        aiProcess_OptimizeMeshes |
-        aiProcess_PreTransformVertices
+        aiProcess_OptimizeMeshes
     );
 
     if (!scene) {
         Console::LogError("Assimp error: %s", importer.GetErrorString());
-        return outMeshes;
+        return model;
     }
 
-    if (outUnitScale)
     {
         // UnitScaleFactor (FBX): centimetros por unidad nativa del archivo.
         // Si no hay metadata, se asume 1.0 (cm), el caso mas comun.
@@ -286,20 +302,21 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
                 unitScaleFactor = static_cast<float>(asDouble);
             }
         }
-        *outUnitScale = unitScaleFactor / 100.0f;
+        model.unitScale = unitScaleFactor / 100.0f;
     }
 
     if (!scene->HasMeshes()) {
         Console::LogError("Assimp: %s no contiene mallas", path.c_str());
-        return outMeshes;
+        return model;
     }
 
     Console::LogInfo("Assimp: %u mallas, %u materiales", scene->mNumMeshes, scene->mNumMaterials);
-    outMeshes.reserve(scene->mNumMeshes);
+    model.meshes.reserve(scene->mNumMeshes);
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
-        ProcessAIMesh(scene->mMeshes[i], scene, scene->mRootNode, outMeshes);
+        ProcessAIMesh(scene->mMeshes[i], scene, model.meshes);
     }
-    return outMeshes;
+    ProcessNode(scene->mRootNode, model.root);
+    return model;
 }
 
 MeshPtr MakeSharedMesh(Mesh&& mesh)

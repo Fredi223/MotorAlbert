@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cfloat>
+#include <unordered_map>
 
 #include "Geometry.h"
 #include "Logger.h"
@@ -88,11 +89,54 @@ GameObject* Scene::AddChild(GameObject* parent, std::unique_ptr<GameObject> chil
     return raw;
 }
 
+// Lo que comparten los nodos de un modelo al convertirlos en GameObjects: cada malla (y su textura)
+// se crea una vez aunque la usen varios nodos.
+struct LoadedMesh {
+    MeshPtr mesh;
+    glm::vec3 aabbMin{ 0.0f }, aabbMax{ 0.0f };
+    GLuint texture = 0;
+    std::string texturePath;
+};
+
+static void SetMeshOn(GameObject& go, const LoadedMesh& m)
+{
+    go.meshComp.mesh = m.mesh;
+    go.aabbMin = m.aabbMin;
+    go.aabbMax = m.aabbMax;
+    go.texComp.textureID = m.texture;
+    go.texComp.path = m.texturePath;
+}
+
+// Un nodo con una sola malla la lleva el mismo; con varias, cada una va en un hijo (un GameObject
+// tiene una malla).
+static void AttachMeshes(Scene& scene, GameObject& go, const ModelNode& node, const std::vector<LoadedMesh>& meshes)
+{
+    if (node.meshIndices.size() == 1)
+    {
+        SetMeshOn(go, meshes[node.meshIndices[0]]);
+        return;
+    }
+    for (unsigned int idx : node.meshIndices)
+    {
+        const std::string& meshName = meshes[idx].mesh->name;
+        GameObject* part = scene.CreateEmpty(meshName.empty() ? node.name + "_mesh" : meshName, &go);
+        SetMeshOn(*part, meshes[idx]);
+    }
+}
+
+static void BuildNode(Scene& scene, const ModelNode& node, GameObject* parent, const std::vector<LoadedMesh>& meshes)
+{
+    GameObject* go = scene.CreateEmpty(node.name, parent);
+    go->transform.SetFromMatrix(node.transform);
+    AttachMeshes(scene, *go, node, meshes);
+    for (const ModelNode& child : node.children)
+        BuildNode(scene, child, go, meshes);
+}
+
 GameObject* Scene::LoadFbx(const std::string& filePath)
 {
-    float fbxUnitScale = 1.0f;
-    std::vector<Mesh> newMeshes = LoadModel(filePath, &fbxUnitScale);
-    if (newMeshes.empty()) return nullptr;
+    Model model = LoadModel(filePath);
+    if (model.meshes.empty()) return nullptr;
 
     const size_t lastSlash = filePath.find_last_of("/\\");
     const size_t nameStart = (lastSlash == std::string::npos) ? 0 : lastSlash + 1;
@@ -103,30 +147,25 @@ GameObject* Scene::LoadFbx(const std::string& filePath)
 
     // BakerHouse.fbx es inconsistente: sus vertices ya vienen con Y arriba, pero su nodo
     // lleva ademas una rotacion de -90 en X (pensada para modelos con Z arriba, como el
-    // Hotdog). Al hornearla la casa queda tumbada, con el tejado hacia -Z; +90 en X la
-    // deja derecha. No hay regla general que distinga este caso, asi que se corrige por nombre.
+    // Hotdog). Con esa rotacion la casa queda tumbada, con el tejado hacia -Z; +90 en X en la
+    // raiz la deja derecha. No hay regla general que distinga este caso, asi que se corrige por nombre.
     std::string lowerBase = baseName;
     std::transform(lowerBase.begin(), lowerBase.end(), lowerBase.begin(),
         [](unsigned char c) { return std::tolower(c); });
     const bool isBakerHouse = (lowerBase == "bakerhouse");
 
-    // El padre lleva la escala de unidades del FBX (y el giro de la Baker House): asi los hijos
-    // quedan con transform identidad y mover el padre mueve el modelo entero.
-    GameObject* modelRoot = CreateEmpty(baseName);
-    modelRoot->transform.scale = glm::vec3(fbxUnitScale);
-    if (isBakerHouse) modelRoot->transform.rotation.x = 90.0f;
-
-    for (size_t i = 0; i < newMeshes.size(); ++i)
+    // Mallas y texturas, una vez cada una. Una textura la pueden usar varias mallas.
+    std::vector<LoadedMesh> meshes;
+    meshes.reserve(model.meshes.size());
+    std::unordered_map<std::string, GLuint> texturesByPath;
+    for (Mesh& mesh : model.meshes)
     {
-        auto go = std::make_unique<GameObject>();
-        go->uid = GenerateUID();
-        go->name = baseName + "_" + std::to_string(i);
-        go->meshComp.mesh = MakeSharedMesh(std::move(newMeshes[i]));
+        LoadedMesh m;
+        m.mesh = MakeSharedMesh(std::move(mesh));
+        ComputeAABBFromMesh(*m.mesh, m.aabbMin, m.aabbMax);
+        m.texture = defaultTexture;
 
-        ComputeAABBFromMesh(*go->meshComp.mesh, go->aabbMin, go->aabbMax);
-
-        go->texComp.textureID = defaultTexture;
-        const std::string& storedPath = go->meshComp.mesh->texturePath;
+        const std::string& storedPath = m.mesh->texturePath;
         if (!storedPath.empty())
         {
             // La ruta del material puede ser solo el nombre de archivo o la ruta absoluta del
@@ -136,21 +175,36 @@ GameObject* Scene::LoadFbx(const std::string& filePath)
             const std::string textureName = (texNameStart == std::string::npos) ? storedPath : storedPath.substr(texNameStart + 1);
             const std::string textureFullPath = fbxDir + textureName;
 
-            if (GLuint tex = LoadImageTexture(textureFullPath))
+            auto cached = texturesByPath.find(textureFullPath);
+            if (cached == texturesByPath.end())
             {
-                go->texComp.textureID = tex;
-                go->texComp.path = textureFullPath;
+                const GLuint tex = LoadImageTexture(textureFullPath);
+                if (!tex) Console::LogError("Se usa la textura checker en lugar de %s", textureFullPath.c_str());
+                cached = texturesByPath.emplace(textureFullPath, tex).first;
             }
-            else
+            if (cached->second)
             {
-                Console::LogError("Se usa la textura checker para %s", go->name.c_str());
+                m.texture = cached->second;
+                m.texturePath = textureFullPath;
             }
         }
-
-        AddChild(modelRoot, std::move(go));
+        meshes.push_back(std::move(m));
     }
+
+    // La raiz del modelo es el nodo raiz del archivo, con la escala de unidades del FBX (y el giro de
+    // la Baker House) por encima: mover, girar o escalar esta raiz afecta al modelo entero.
+    Transform fix;
+    fix.scale = glm::vec3(model.unitScale);
+    if (isBakerHouse) fix.rotation.x = 90.0f;
+
+    GameObject* modelRoot = CreateEmpty(baseName);
+    modelRoot->transform.SetFromMatrix(fix.GetMatrix() * model.root.transform);
+    AttachMeshes(*this, *modelRoot, model.root, meshes);
+    for (const ModelNode& child : model.root.children)
+        BuildNode(*this, child, modelRoot, meshes);
+
     RebuildOctree();
-    Console::LogInfo("FBX cargado: %s (%zu mallas -> GameObjects)", filePath.c_str(), newMeshes.size());
+    Console::LogInfo("FBX cargado: %s (%zu mallas, %zu texturas)", filePath.c_str(), meshes.size(), texturesByPath.size());
     return modelRoot;
 }
 
