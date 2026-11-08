@@ -1,6 +1,8 @@
 #include "Geometry.h"
 
 #include <cfloat>
+#include <cmath>
+#include <algorithm>
 #include <utility>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -31,7 +33,7 @@ bool RayIntersectsAABB(const glm::vec3& rayOrig, const glm::vec3& rayDir,
     if (tzmax < tmax) tmax = tzmax;
     if (tmax < 0.0f) return false;
 
-    outT = (tmin >= 0.0f) ? tmin : tmax;
+    outT = std::max(tmin, 0.0f);   // distancia de entrada; 0 si el origen ya esta dentro de la caja
     return true;
 }
 
@@ -119,4 +121,74 @@ bool ComputeAABBFromMesh(const Mesh& mesh, glm::vec3& outMin, glm::vec3& outMax)
     outMin = minB;
     outMax = maxB;
     return true;
+}
+
+glm::mat4 CameraViewFromWorld(const glm::mat4& world)
+{
+    const glm::vec3 position(world[3]);
+    const glm::vec3 forward = -glm::normalize(glm::vec3(world[2]));
+    const glm::vec3 up = glm::normalize(glm::vec3(world[1]));
+    return glm::lookAt(position, position + forward, up);
+}
+
+void FrustumCorners(const glm::mat4& vp, glm::vec3 outCorners[8])
+{
+    // Las esquinas del cubo de NDC (-1..1 en x, y, z) llevadas a mundo con la inversa.
+    const glm::mat4 inv = glm::inverse(vp);
+    static const glm::vec2 xy[4] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } };
+    for (int i = 0; i < 8; ++i)
+    {
+        const glm::vec4 p = inv * glm::vec4(xy[i % 4], i < 4 ? -1.0f : 1.0f, 1.0f);
+        outCorners[i] = glm::vec3(p) / p.w;
+    }
+}
+
+bool RayIntersectsTriangle(const glm::vec3& rayOrig, const glm::vec3& rayDir,
+    const glm::vec3& v0, const glm::vec3& v1, const glm::vec3& v2, float& outT)
+{
+    const glm::vec3 e1 = v1 - v0;
+    const glm::vec3 e2 = v2 - v0;
+    const glm::vec3 p = glm::cross(rayDir, e2);
+    const float det = glm::dot(e1, p);
+    if (std::abs(det) < 1e-12f) return false;   // rayo paralelo al triangulo
+
+    const float invDet = 1.0f / det;
+    const glm::vec3 s = rayOrig - v0;
+    const float u = glm::dot(s, p) * invDet;
+    if (u < 0.0f || u > 1.0f) return false;
+
+    const glm::vec3 q = glm::cross(s, e1);
+    const float v = glm::dot(rayDir, q) * invDet;
+    if (v < 0.0f || u + v > 1.0f) return false;
+
+    const float t = glm::dot(e2, q) * invDet;
+    if (t <= 0.0f) return false;
+    outT = t;
+    return true;
+}
+
+bool RayIntersectsMesh(const Mesh& mesh, const glm::vec3& rayOrig, const glm::vec3& rayDir, float& outT)
+{
+    const size_t VERTEX_STRIDE_FLOATS = 11;   // el formato de SetupMesh (ver ComputeAABBFromMesh)
+    const size_t vertexCount = mesh.vertices.size() / VERTEX_STRIDE_FLOATS;
+    auto pos = [&](unsigned int i) {
+        const float* v = &mesh.vertices[size_t(i) * VERTEX_STRIDE_FLOATS];
+        return glm::vec3(v[0], v[1], v[2]);
+    };
+
+    bool hit = false;
+    float best = FLT_MAX;
+    for (size_t i = 0; i + 2 < mesh.indices.size(); i += 3)
+    {
+        const unsigned int a = mesh.indices[i], b = mesh.indices[i + 1], c = mesh.indices[i + 2];
+        if (a >= vertexCount || b >= vertexCount || c >= vertexCount) continue;
+        float t = 0.0f;
+        if (RayIntersectsTriangle(rayOrig, rayDir, pos(a), pos(b), pos(c), t) && t < best)
+        {
+            best = t;
+            hit = true;
+        }
+    }
+    if (hit) outT = best;
+    return hit;
 }

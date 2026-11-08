@@ -69,6 +69,11 @@ void Editor::DrawConfiguration()
             ImGui::Text("Culling");
 
             ImGui::Checkbox("Enable Frustum Culling", &renderer.frustumCulling);
+            const RenderStats& rs = renderStats;
+            ImGui::Text("Culling camera: %s", rs.cullingCamera.empty() ? "editor camera" : rs.cullingCamera.c_str());
+            ImGui::Text("Objects drawn: %d   culled: %d", rs.drawn, rs.culled);
+            ImGui::Text("Octree: %d candidates, %d of %d nodes visited", rs.candidates, rs.nodesVisited, rs.nodesTotal);
+            ImGui::TextDisabled("Debug draw (AABB, octree, rayo, frustums): menu View > Debug Draw");
         }
 
         // --- Input / camara ---
@@ -77,6 +82,9 @@ void Editor::DrawConfiguration()
             ImGui::DragFloat("Mouse sensitivity", &camera.mouseSensitivity, 0.005f, 0.01f, 1.0f);
             ImGui::DragFloat("Zoom step (wheel)", &camera.zoomStep, 0.005f, 0.01f, 0.5f);
             ImGui::Text("Sprint (Shift): x%.1f", Camera::SPRINT_MULTIPLIER);
+            ImGui::Separator();
+            ImGui::Text("Editor camera lens");
+            DrawLensFields(camera.lens);
             ImGui::Text("Camera: (%.2f, %.2f, %.2f)  yaw %.1f  pitch %.1f",
                 camera.position.x, camera.position.y, camera.position.z, camera.yaw, camera.pitch);
         }

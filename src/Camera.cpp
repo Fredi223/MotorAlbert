@@ -11,7 +11,7 @@ glm::mat4 Camera::GetViewMatrix() const
 
 glm::mat4 Camera::GetProjectionMatrix(float aspect) const
 {
-    return glm::perspective(glm::radians(FOV_DEG), aspect, NEAR_PLANE, FAR_PLANE);
+    return lens.GetProjection(aspect);
 }
 
 // Recalcula front a partir de yaw/pitch (compartido por libre y orbital).
@@ -66,7 +66,7 @@ void Camera::BeginOrbit()
 {
     orbitDistance = glm::length(position - orbitTarget);
     if (orbitDistance > 1e-4f) AimAt(orbitTarget);
-    orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(), ORBIT_MAX_DISTANCE);
+    orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(), OrbitMaxDistance());
     position = orbitTarget - front * orbitDistance;
 }
 
@@ -87,7 +87,7 @@ void Camera::Zoom(float wheelDelta, bool orbiting)
     if (newDistance < oldDistance)
         newDistance = std::max(newDistance, std::min(oldDistance, OrbitMinDistance()));
     else
-        newDistance = std::min(newDistance, std::max(oldDistance, ORBIT_MAX_DISTANCE));
+        newDistance = std::min(newDistance, std::max(oldDistance, OrbitMaxDistance()));
     orbitDistance = newDistance;
 
     if (orbiting) position = orbitTarget - front * orbitDistance;
@@ -98,12 +98,12 @@ void Camera::FrameTarget(float aspect)
 {
     // La esfera que envuelve el AABB debe caber en el FOV mas estrecho
     // (vertical u horizontal, segun el aspecto del viewport).
-    float halfFovY = glm::radians(FOV_DEG) * 0.5f;
+    float halfFovY = glm::radians(lens.fovDeg) * 0.5f;
     float halfFovX = atan(tan(halfFovY) * aspect);
     float halfFov = std::min(halfFovY, halfFovX);
 
     float radius = std::max(orbitRadius, 0.01f);
     orbitDistance = radius / sin(halfFov) * FRAME_MARGIN;
-    orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(), ORBIT_MAX_DISTANCE);
+    orbitDistance = glm::clamp(orbitDistance, OrbitMinDistance(), OrbitMaxDistance());
     position = orbitTarget - front * orbitDistance;
 }

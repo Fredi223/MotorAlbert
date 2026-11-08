@@ -9,6 +9,8 @@ extern const char* normalGeometryShaderSrc;
 extern const char* normalFragmentShaderSrc;
 extern const char* gridVertexShaderSrc;       // rejilla de referencia
 extern const char* gridFragmentShaderSrc;
+extern const char* lineVertexShaderSrc;       // lineas de debug (AABB, frustum, octree, rayo), con color por vertice
+extern const char* lineFragmentShaderSrc;
 
 // Compila y enlaza un shader program. geometrySrc es opcional (solo lo usa el shader de normales).
 // Los errores de compilacion o enlazado se escriben en la Consola.

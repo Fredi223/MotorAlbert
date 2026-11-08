@@ -18,12 +18,10 @@ static bool DrawTransform(Transform& transform)
 {
     // Se edita el transform LOCAL (relativo al padre). Las matrices y AABB de mundo de el y de
     // sus hijos se recalculan antes de dibujar (Scene::UpdateTransforms).
-    bool committed = false;   // el gesto de edicion (arrastre o tecleo) ha terminado
+    bool changed = false;
 
-    ImGui::DragFloat3("Position", glm::value_ptr(transform.position), 0.1f);
-    committed |= ImGui::IsItemDeactivatedAfterEdit();
-    ImGui::DragFloat3("Rotation", glm::value_ptr(transform.rotation), 0.5f);
-    committed |= ImGui::IsItemDeactivatedAfterEdit();
+    changed |= ImGui::DragFloat3("Position", glm::value_ptr(transform.position), 0.1f);
+    changed |= ImGui::DragFloat3("Rotation", glm::value_ptr(transform.rotation), 0.5f);
     if (ImGui::DragFloat3("Scale", glm::value_ptr(transform.scale), 0.05f))
     {
         // Escala 0 haria la matriz no invertible (el reparent la invierte). Se conserva el signo:
@@ -31,17 +29,18 @@ static bool DrawTransform(Transform& transform)
         for (int i = 0; i < 3; ++i)
             if (std::abs(transform.scale[i]) < 0.001f)
                 transform.scale[i] = std::copysign(0.001f, transform.scale[i]);
+        changed = true;
     }
-    committed |= ImGui::IsItemDeactivatedAfterEdit();
     if (ImGui::Button("Reset Transform"))
     {
         transform = Transform{};
-        committed = true;
+        changed = true;
     }
 
-    // El octree solo sabe reconstruirse entero (y cada reconstruccion escribe en la consola): se
-    // reconstruye una vez al terminar el gesto, no en cada frame de un arrastre.
-    return committed;
+    // Mientras se arrastra, el octree se reconstruye en cada frame que el objeto se mueve: si no,
+    // seguiria en sus hojas antiguas y el culling o el picking lo perderian. Es barato (una pasada
+    // por los objetos con malla).
+    return changed;
 }
 
 static void DrawMesh(ComponentMesh& comp, const GameObject& go, const Renderer& renderer)
@@ -118,12 +117,27 @@ static void DrawMaterial(ComponentMaterial& comp, const GameObject& go, Scene& s
     }
 }
 
-static void DrawCamera(ComponentCamera& comp)
+void Editor::DrawLensFields(ComponentCamera& lens)
 {
-    ImGui::DragFloat("FOV (vertical)", &comp.fovDeg, 0.5f, 1.0f, 179.0f, "%.1f deg");
-    ImGui::DragFloat("Near", &comp.nearPlane, 0.01f, 0.001f, comp.farPlane - 0.001f, "%.3f");
-    ImGui::DragFloat("Far", &comp.farPlane, 1.0f, comp.nearPlane + 0.001f, 100000.0f, "%.1f");
-    ImGui::TextDisabled("(se conecta al render y al culling en la Fase 3)");
+    ImGui::DragFloat("FOV (vertical)", &lens.fovDeg, 0.5f, 1.0f, 179.0f, "%.1f deg");
+    ImGui::DragFloat("Near plane", &lens.nearPlane, 0.01f, 0.001f, lens.farPlane - 0.001f, "%.3f");
+    ImGui::DragFloat("Far plane", &lens.farPlane, 1.0f, lens.nearPlane + 0.001f, 100000.0f, "%.1f");
+}
+
+static void DrawCamera(ComponentCamera& comp, const GameObject& go, Scene& scene)
+{
+    Editor::DrawLensFields(comp);
+
+    // Solo una culling camera a la vez: marcar esta desmarca las demas.
+    if (ImGui::Checkbox("Culling camera", &comp.cullingCamera) && comp.cullingCamera)
+    {
+        scene.ForEach([&](GameObject& other) {
+            auto* cam = other.components.Get<ComponentCamera>();
+            if (cam && cam != &comp) cam->cullingCamera = false;
+        });
+        Console::LogInfo("%s hace ahora el frustum culling", go.name.c_str());
+    }
+    ImGui::TextDisabled("Mira hacia su -Z local. El aspecto es el del viewport.");
 }
 
 void Editor::DrawInspector()
@@ -183,7 +197,7 @@ void Editor::DrawInspector()
             {
             case Component::Type::Mesh:     DrawMesh(static_cast<ComponentMesh&>(comp), go, renderer); break;
             case Component::Type::Material: DrawMaterial(static_cast<ComponentMaterial&>(comp), go, scene, renderer); break;
-            case Component::Type::Camera:   DrawCamera(static_cast<ComponentCamera&>(comp)); break;
+            case Component::Type::Camera:   DrawCamera(static_cast<ComponentCamera&>(comp), go, scene); break;
             default: break;
             }
             ImGui::EndDisabled();

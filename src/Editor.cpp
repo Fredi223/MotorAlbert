@@ -169,7 +169,7 @@ void Editor::DrawFrame()
 
     // Matrices de mundo al dia con lo editado este frame (Inspector) antes de dibujar.
     scene.UpdateTransforms();
-    drawnCount = renderer.Render(scene, view, projection);
+    renderStats = renderer.Render(scene, view, projection);
 
     Console::DrawConsole("Console", &showConsole);
     DrawHierarchy();
@@ -237,6 +237,14 @@ void Editor::DrawMainMenuBar()
             ImGui::MenuItem("Configuration", nullptr, &showConfig);
             ImGui::MenuItem("Normals", nullptr, &renderer.showNormals);
             ImGui::MenuItem("Face Normals", nullptr, &renderer.showFaceNormals);
+            if (ImGui::BeginMenu("Debug Draw"))
+            {
+                ImGui::MenuItem("AABBs", nullptr, &renderer.showAABBs);
+                ImGui::MenuItem("Octree", nullptr, &renderer.showOctree);
+                ImGui::MenuItem("Pick Ray", nullptr, &renderer.showPickRay);
+                ImGui::MenuItem("Camera Frustums", nullptr, &renderer.showCameraFrustums);
+                ImGui::EndMenu();
+            }
             ImGui::MenuItem("About", nullptr, &showAbout);
             ImGui::EndMenu();
         }
@@ -258,6 +266,13 @@ void Editor::DrawMainMenuBar()
                 if (ImGui::MenuItem("Cone")) selectedObject = scene.AddPrimitive("Cone", CreateConeMesh());
                 if (ImGui::MenuItem("Plane")) selectedObject = scene.AddPrimitive("Plane", CreatePlaneMesh());
                 ImGui::EndMenu();
+            }
+            // La camara nueva se coloca donde esta la del editor y mirando hacia donde mira ella
+            // (la inversa de la vista: una camara mira hacia su -Z).
+            if (ImGui::MenuItem("Camera"))
+            {
+                selectedObject = scene.CreateCamera(glm::inverse(view));
+                Console::LogInfo("Camara de juego creada en la posicion de la camara del editor");
             }
             ImGui::EndMenu();
         }

@@ -22,7 +22,7 @@ public:
     Scene();
 
     GameObject root;
-    Octree octree{ glm::vec3(-1000.0f), glm::vec3(1000.0f) };
+    Octree octree;
     bool structureDirty = false;
 
     // Textura que reciben los objetos nuevos (la checker). Es global: nunca se libera desde aqui.
@@ -38,6 +38,13 @@ public:
     template <class F> void ForEach(F&& f) const { Visit<const GameObject>(root, f); }
 
     GameObject* FindByUid(uint64_t uid);
+
+    // La camara de juego que hace el frustum culling: la primera con ComponentCamera activo, marcada como
+    // cullingCamera y no oculta. nullptr = se usa la camara del editor.
+    const GameObject* FindCullingCamera() const;
+
+    // Crea una camara de juego (GameObject con ComponentCamera) de primer nivel.
+    GameObject* CreateCamera(const glm::mat4& worldTransform);
 
     // Recalcula la matriz de mundo y el AABB de mundo de todos los objetos.
     void UpdateTransforms();

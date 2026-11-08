@@ -30,6 +30,25 @@ GameObject* Scene::FindByUid(uint64_t uid)
     return found;
 }
 
+const GameObject* Scene::FindCullingCamera() const
+{
+    const GameObject* found = nullptr;
+    ForEach([&found](const GameObject& go) {
+        const auto* cam = go.components.Get<ComponentCamera>();
+        if (!found && cam && cam->enabled && cam->cullingCamera && !go.IsHiddenInHierarchy()) found = &go;
+    });
+    return found;
+}
+
+GameObject* Scene::CreateCamera(const glm::mat4& worldTransform)
+{
+    GameObject* go = CreateEmpty("Camera");
+    go->transform.SetFromMatrix(worldTransform);
+    go->components.Add<ComponentCamera>();
+    go->UpdateWorld(glm::mat4(1.0f));
+    return go;
+}
+
 static void UpdateWorldRecursive(GameObject& go, const glm::mat4& parentWorld)
 {
     go.UpdateWorld(parentWorld);
@@ -59,10 +78,9 @@ void Scene::RebuildOctree()
 
     if (meshCount == 0)
     {
-        // Sin mallas no hay limites reales (degenerarian a +-infinito): se usan los mismos limites
-        // fijos que la consulta de dibujado.
-        minB = glm::vec3(-1000.0f);
-        maxB = glm::vec3(1000.0f);
+        // Sin mallas no hay limites reales (degenerarian a +-infinito): da igual cuales, una caja unidad.
+        minB = glm::vec3(-1.0f);
+        maxB = glm::vec3(1.0f);
     }
     else
     {
@@ -74,8 +92,7 @@ void Scene::RebuildOctree()
 
     octree.Rebuild(minB, maxB);
     ForEach([&](GameObject& go) { if (go.HasMesh()) octree.Insert(&go); });
-
-    Console::LogInfo("Octree rebuilt (%zu objects with mesh)", meshCount);
+    // Sin log: se reconstruye en cada frame en que algo se mueve (arrastrar en el Inspector).
 }
 
 GameObject* Scene::AddChild(GameObject* parent, std::unique_ptr<GameObject> child)

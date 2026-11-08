@@ -13,14 +13,14 @@
 void Editor::DrawViewport()
 {
     ImGui::Begin("Viewport");
+    const RenderStats& rs = renderStats;
     ImGui::TextColored(
-        renderer.frustumCulling ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f)
-        : ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
-        "Frustum Culling: %s",
-        renderer.frustumCulling ? "ON" : "OFF"
-    );
-
-    ImGui::Text("Drawn objects: %d", drawnCount);
+        renderer.frustumCulling ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f),
+        "Frustum Culling: %s", renderer.frustumCulling ? "ON" : "OFF");
+    ImGui::SameLine();
+    ImGui::TextDisabled("(camera: %s)", rs.cullingCamera.empty() ? "editor" : rs.cullingCamera.c_str());
+    ImGui::Text("Drawn: %d | Culled: %d | Octree: %d candidates, %d of %d nodes visited",
+        rs.drawn, rs.culled, rs.candidates, rs.nodesVisited, rs.nodesTotal);
     ImGui::Separator();
 
     ImVec2 size = ImGui::GetContentRegionAvail();
@@ -45,62 +45,17 @@ void Editor::DrawViewport()
     }
 
     // ========================================================
-    // SELECCIÓN DE OBJETOS (RAYCAST CONTRA LOS AABB)
+    // SELECCION DE OBJETOS (RAYCAST: OCTREE -> AABB -> TRIANGULOS)
     // ========================================================
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !altHeld && mouseInsideViewport && !ImGui::IsAnyItemHovered())
     {
-        const float PICK_TOLERANCE_PIXELS = 3.0f;   // margen de click alrededor del AABB, en pixeles de pantalla
-        const float pickPixelToWorld = 2.0f * std::tan(glm::radians(Camera::FOV_DEG) * 0.5f) / viewportHeightF; // mundo por pixel y por unidad de profundidad
-
         // relMouseX/Y ya son relativos al viewport (origen arriba-izq), tal como los espera la funcion
-        glm::vec3 rayDir = ScreenToWorldRay_UnProject(
-            relMouseX, relMouseY,
-            viewportWidthF, viewportHeightF,
-            projection, view);
+        const glm::vec3 rayDir = ScreenToWorldRay_UnProject(relMouseX, relMouseY,
+            viewportWidthF, viewportHeightF, projection, view);
+        const glm::vec3 rayOrigin = camera.position;
+        renderer.SetPickRay(rayOrigin, rayOrigin + rayDir * camera.lens.farPlane);
 
-        glm::vec3 rayOrigin = camera.position;
-
-        float closestDistance = std::numeric_limits<float>::max();
-        GameObject* hit = nullptr;
-
-        // Candidatos: los objetos de las hojas del octree que toca la caja que envuelve el rayo.
-        const glm::vec3 rayEnd = rayOrigin + rayDir * 10000.0f;
-        std::vector<GameObject*> candidates;
-        scene.octree.Query(glm::min(rayOrigin, rayEnd), glm::max(rayOrigin, rayEnd), candidates);
-
-        for (GameObject* goPtr : candidates)
-        {
-            GameObject& go = *goPtr;
-            const ComponentMesh* meshComp = go.ActiveMesh();
-            if (go.IsHiddenInHierarchy() || !meshComp || meshComp->mesh->vertices.empty()) continue;
-
-            float tHit = 0.0f;
-
-            // Tolerancia de click: como maximo PICK_TOLERANCE_PIXELS pixeles alrededor del AABB. Un
-            // pixel a profundidad d equivale a d * 2*tan(fov/2) / altoViewport unidades de mundo, asi el
-            // margen es parecido en pantalla cerca o lejos (uno fijo en mundo no lo es). Se usa una cota
-            // inferior de la profundidad de cualquier punto del AABB (la del centro menos la semidiagonal)
-            // para que en sus caras mas cercanas, donde un pixel mide menos, el margen no se dispare.
-            const glm::vec3 aabbCenter = (go.worldAabbMin + go.worldAabbMax) * 0.5f;
-            const float halfDiag = 0.5f * glm::length(go.worldAabbMax - go.worldAabbMin);
-            const float depth = std::max(glm::dot(aabbCenter - rayOrigin, camera.front) - halfDiag, 0.1f);
-            const float pickInflate = PICK_TOLERANCE_PIXELS * depth * pickPixelToWorld;
-
-            glm::vec3 pickMin = go.worldAabbMin - glm::vec3(pickInflate);
-            glm::vec3 pickMax = go.worldAabbMax + glm::vec3(pickInflate);
-
-            if (!RayIntersectsAABB(rayOrigin, rayDir, pickMin, pickMax, tHit))
-                continue;
-
-            // rayDir esta normalizado, asi que tHit ya es la distancia en unidades de mundo.
-            if (tHit > 0.0f && tHit < closestDistance)
-            {
-                closestDistance = tHit;
-                hit = goPtr;
-            }
-        }
-
-        if (hit)
+        if (GameObject* hit = PickObject(rayOrigin, rayDir))
         {
             selectedObject = hit;
             revealSelection = true;   // la Hierarchy despliega sus padres
@@ -115,4 +70,43 @@ void Editor::DrawViewport()
 
     ImGui::Image((ImTextureID)(intptr_t)renderer.GetViewportTexture(), size, ImVec2(0, 1), ImVec2(1, 0));
     ImGui::End(); // cierra Viewport
+}
+
+GameObject* Editor::PickObject(const glm::vec3& rayOrigin, const glm::vec3& rayDir) const
+{
+    // 1) El octree descarta los nodos que el rayo no atraviesa.
+    std::vector<GameObject*> candidates;
+    scene.octree.QueryRay(rayOrigin, rayDir, candidates);
+
+    // 2) De los candidatos, los que el rayo toca en su AABB, ordenados por la distancia de entrada.
+    std::vector<std::pair<float, GameObject*>> hits;
+    for (GameObject* go : candidates)
+    {
+        if (go->IsHiddenInHierarchy() || !go->HasMesh()) continue;
+        float tEnter = 0.0f;
+        if (RayIntersectsAABB(rayOrigin, rayDir, go->worldAabbMin, go->worldAabbMax, tEnter))
+            hits.emplace_back(tEnter, go);
+    }
+    std::sort(hits.begin(), hits.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    // 3) Test fino contra los triangulos, en el espacio local de cada malla (el rayo se lleva alli con
+    //    la inversa de su matriz de mundo; la t sale en las mismas unidades que en el rayo de mundo).
+    //    Como estan ordenados, en cuanto un AABB empieza mas lejos que el mejor impacto ya no hace
+    //    falta seguir: nada de lo que queda puede estar delante.
+    float best = std::numeric_limits<float>::max();
+    GameObject* hit = nullptr;
+    for (const auto& [tEnter, go] : hits)
+    {
+        if (tEnter > best) break;
+        const glm::mat4 toLocal = glm::inverse(go->worldMatrix);
+        const glm::vec3 localOrigin = glm::vec3(toLocal * glm::vec4(rayOrigin, 1.0f));
+        const glm::vec3 localDir = glm::vec3(toLocal * glm::vec4(rayDir, 0.0f));
+        float t = 0.0f;
+        if (RayIntersectsMesh(*go->ActiveMesh()->mesh, localOrigin, localDir, t) && t < best)
+        {
+            best = t;
+            hit = go;
+        }
+    }
+    return hit;
 }

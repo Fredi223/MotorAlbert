@@ -1,19 +1,22 @@
 #pragma once
 #include <glm/glm.hpp>
 
+#include "Component.h"
+
 // Camara del editor: libre (mirar + mover) y orbital alrededor de un target. Solo guarda el estado
 // y aplica los movimientos; leer el raton y el teclado es cosa de quien la usa.
 struct Camera
 {
-    static constexpr float FOV_DEG = 60.0f;                   // FOV vertical; lo usan la proyeccion, el encuadre (F) y el picking
-    static constexpr float NEAR_PLANE = 0.1f;
-    static constexpr float FAR_PLANE = 100.0f;
     static constexpr float SPRINT_MULTIPLIER = 2.0f;          // factor al mantener Shift (la guia de entrega pide duplicar)
     static constexpr float MAX_DELTA_TIME = 0.1f;             // s; acota tirones para no teletransportar la camara
     static constexpr float ORBIT_MIN_RADIUS_FACTOR = 0.75f;   // distancia minima = factor * radio del objeto...
     static constexpr float ORBIT_MIN_DISTANCE_FLOOR = 0.25f;  // ...con este suelo si no hay objeto
-    static constexpr float ORBIT_MAX_DISTANCE = 90.0f;        // el far plane esta en 100
+    static constexpr float ORBIT_MAX_FAR_FRACTION = 0.9f;     // distancia maxima de orbita = fraccion del far plane
     static constexpr float FRAME_MARGIN = 1.2f;               // holgura alrededor del objeto al encuadrar
+
+    // FOV, near y far: el mismo componente que las camaras de juego (se editan en Configuration).
+    // Lo usan la proyeccion, el encuadre (F) y el picking.
+    ComponentCamera lens;
 
     glm::vec3 position = glm::vec3(0.0f, 2.0f, 5.0f);
     glm::vec3 front = glm::vec3(0.0f, 0.0f, -1.0f);
@@ -55,4 +58,5 @@ private:
     void UpdateFront();
     void AimAt(const glm::vec3& target);
     float OrbitMinDistance() const;
+    float OrbitMaxDistance() const { return lens.farPlane * ORBIT_MAX_FAR_FRACTION; }
 };

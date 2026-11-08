@@ -6,6 +6,7 @@
 #include <vector>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "ModuleModelLoader.h"
 
@@ -83,12 +84,21 @@ struct ComponentMaterial : ComponentOf<ComponentMaterial, Component::Type::Mater
     bool operator==(const ComponentMaterial&) const = default;
 };
 
-// Por ahora solo guarda los parametros; la Fase 3 la conecta al render y al culling.
+// Parametros de proyeccion de una camara. La usan la camara del editor (Camera::lens) y las camaras
+// de juego (un GameObject con este componente: mira hacia su -Z local, con +Y arriba).
 struct ComponentCamera : ComponentOf<ComponentCamera, Component::Type::Camera>
 {
     float fovDeg = 60.0f;               // FOV vertical
     float nearPlane = 0.1f;
     float farPlane = 100.0f;
+    // El frustum culling usa esta camara en lugar de la del editor (como mucho una en la escena):
+    // asi se ve desde la camara del editor que se descarta lo que queda fuera de ella.
+    bool cullingCamera = false;
+
+    glm::mat4 GetProjection(float aspect) const
+    {
+        return glm::perspective(glm::radians(fovDeg), aspect, nearPlane, farPlane);
+    }
 
     bool operator==(const ComponentCamera&) const = default;
 };

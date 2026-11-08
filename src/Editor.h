@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "Camera.h"
+#include "Renderer.h"   // RenderStats
 
 class FrameTiming;
 class Renderer;
@@ -41,6 +42,9 @@ public:
     // Escape o File > Exit.
     bool WantsToQuit() const { return quitRequested; }
 
+    // FOV, near y far de una camara (la del editor en Configuration y las de juego en el Inspector).
+    static void DrawLensFields(ComponentCamera& lens);
+
 private:
     // --- Editor.cpp ---
     void DrawMainMenuBar();
@@ -59,6 +63,10 @@ private:
     void DrawConfiguration();
     void DrawHierarchy();
     void DrawViewport();
+
+    // --- PanelViewport.cpp ---
+    // Objeto con malla mas cercano que atraviesa el rayo (test contra sus triangulos), o nullptr.
+    GameObject* PickObject(const glm::vec3& rayOrigin, const glm::vec3& rayDir) const;
 
     // --- PanelHierarchy.cpp ---
     // Lo que se pide al dibujar el arbol se aplica al terminar de recorrerlo (borrar o mover
@@ -107,7 +115,7 @@ private:
     float relMouseY = 0.0f;
     float viewportWidthF = 1280.0f;
     float viewportHeightF = 720.0f;
-    int drawnCount = 0;
+    RenderStats renderStats;   // del ultimo Render (lo muestran el Viewport y Configuration)
 
     // Input de la camara
     int prevMouseX = 0, prevMouseY = 0;
