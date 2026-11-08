@@ -132,7 +132,8 @@ void Editor::DrawConfiguration()
 
             size_t vertexCount = 0, indexCount = 0, meshBytes = 0;
             for (const GameObject& o : scene.objects) {
-                const Mesh& m = o.meshComp.mesh;
+                if (!o.meshComp.mesh) continue;
+                const Mesh& m = *o.meshComp.mesh;
                 vertexCount += m.vertexCount;
                 indexCount += m.indexCount;
                 meshBytes += m.vertices.size() * sizeof(float) + m.indices.size() * sizeof(unsigned int);

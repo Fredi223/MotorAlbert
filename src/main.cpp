@@ -141,8 +141,9 @@ int main(int argc, char* argv[])
     // ========================================================
     Console::LogInfo("Saliendo del bucle principal");
 
-    for (auto& go : scene.objects) go.Destroy();
+    // Las mallas se liberan con su ultimo MeshPtr (escena y snapshots del undo): antes de destruir el contexto.
     scene.objects.clear();
+    history.Clear();
 
     editor.Shutdown();
     renderer.Shutdown();

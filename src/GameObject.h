@@ -15,7 +15,7 @@ struct TextureComponent {
 };
 
 struct MeshComponent {
-    Mesh mesh;
+    MeshPtr mesh;   // nullptr = sin malla
 };
 
 struct GameObject
@@ -77,16 +77,9 @@ struct GameObject
     {
         glm::mat4 model = transform.GetMatrix();
         glUniformMatrix4fv(uModelLoc, 1, GL_FALSE, glm::value_ptr(model));
-        meshComp.mesh.Draw();
+        if (meshComp.mesh) meshComp.mesh->Draw();
     }
-
-    // La textura NO se borra aqui: varios GameObject pueden compartir el mismo GLuint (p. ej. un
-    // duplicado) y borrarla dejaria a los demas con un handle invalido. La libera quien sabe quien
-    // la usa (ReleaseTextureIfUnused en main.cpp).
-    void Destroy()
-    {
-        meshComp.mesh.Destroy();
-        texComp.textureID = 0;
-    }
+    // No hay Destroy: la malla se libera sola con su ultimo MeshPtr, y la textura (que puede estar
+    // compartida por GLuint) la libera Scene::ReleaseTextureIfUnused.
 };
 

@@ -61,15 +61,15 @@ void Scene::LoadFbx(const std::string& filePath)
     {
         GameObject go;
         go.name = baseName + "_" + std::to_string(i + currentSize);
-        go.meshComp.mesh = std::move(newMeshes[i]);
+        go.meshComp.mesh = MakeSharedMesh(std::move(newMeshes[i]));
 
-        ComputeAABBFromMesh(go.meshComp.mesh, go.aabbMin, go.aabbMax);
+        ComputeAABBFromMesh(*go.meshComp.mesh, go.aabbMin, go.aabbMax);
 
         if (isBakerHouse) go.transform.rotation.x = 90.0f;
         go.transform.scale = glm::vec3(fbxUnitScale);
 
         go.texComp.textureID = defaultTexture;
-        const std::string& storedPath = go.meshComp.mesh.texturePath;
+        const std::string& storedPath = go.meshComp.mesh->texturePath;
         if (!storedPath.empty())
         {
             // La ruta del material puede ser solo el nombre de archivo o la ruta absoluta del
@@ -100,8 +100,8 @@ int Scene::AddPrimitive(const char* name, Mesh mesh)
 {
     GameObject go;
     go.name = name;
-    go.meshComp.mesh = std::move(mesh);
-    ComputeAABBFromMesh(go.meshComp.mesh, go.aabbMin, go.aabbMax);
+    go.meshComp.mesh = MakeSharedMesh(std::move(mesh));
+    ComputeAABBFromMesh(*go.meshComp.mesh, go.aabbMin, go.aabbMax);
     go.texComp.textureID = defaultTexture;
 
     objects.push_back(std::move(go));
@@ -113,11 +113,8 @@ int Scene::AddPrimitive(const char* name, Mesh mesh)
 int Scene::Duplicate(int index)
 {
     if (index < 0 || index >= (int)objects.size()) return -1;
+    // La copia comparte la malla (MeshPtr): la geometria esta una sola vez en memoria.
     GameObject copy = objects[index];
-    // La copia de Mesh duplica tambien los handles de GL (VAO/VBO/EBO): original y copia
-    // apuntarian a los mismos buffers y borrar uno dejaria al otro sin geometria.
-    // SetupMesh genera buffers propios a partir de vertices/indices, que si se copiaron.
-    copy.meshComp.mesh.SetupMesh();
     copy.name = objects[index].name + "_copy";
     copy.transform.position += glm::vec3(0.1f, 0.0f, 0.1f);
     objects.insert(objects.begin() + index + 1, std::move(copy));
@@ -129,7 +126,6 @@ void Scene::Erase(int index, int& selected)
 {
     if (index < 0 || index >= (int)objects.size()) return;
     const GLuint tex = objects[index].texComp.textureID;
-    objects[index].Destroy();
     objects.erase(objects.begin() + index);
     structureDirty = true;
     ReleaseTextureIfUnused(tex);

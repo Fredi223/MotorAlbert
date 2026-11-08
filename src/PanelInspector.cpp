@@ -82,7 +82,7 @@ void Editor::DrawInspector()
             // ---------------- Mesh ----------------
             if (ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                const Mesh& mesh = go.meshComp.mesh;
+                const Mesh& mesh = *go.meshComp.mesh;
                 ImGui::Text("Vertices: %u", mesh.vertexCount);
                 ImGui::Text("Indices: %u", mesh.indexCount);
                 ImGui::Text("VAO: %u", mesh.VAO);

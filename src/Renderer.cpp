@@ -237,12 +237,12 @@ int Renderer::Render(const Scene& scene, const glm::mat4& view, const glm::mat4&
             if (drawNormalsForThis)
             {
                 glUniform3f(normalUColorLoc, 0.0f, 1.0f, 0.0f);
-                go.meshComp.mesh.DrawNormals();
+                go.meshComp.mesh->DrawNormals();
             }
             if (drawFaceNormalsForThis)
             {
                 glUniform3f(normalUColorLoc, 1.0f, 0.2f, 1.0f);
-                go.meshComp.mesh.DrawFaceNormals();
+                go.meshComp.mesh->DrawFaceNormals();
             }
             glUseProgram(shaderProgram);
         }

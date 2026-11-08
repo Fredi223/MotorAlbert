@@ -9,10 +9,9 @@ class Scene;
 
 // Undo/Redo del editor por snapshots de la escena.
 //
-// Un snapshot es una copia de los GameObject SOLO con datos de CPU (vertices, indices,
-// transform...): los handles de GL de las mallas se ponen a 0, de modo que ningun snapshot posee
-// buffers de GPU y al restaurar se regeneran con SetupMesh (igual que en Scene::Duplicate).
-// Las texturas si se comparten por handle, asi que la escena le pregunta al historial
+// Un snapshot es una copia de los GameObject. Las mallas son MeshPtr compartidos: el snapshot
+// mantiene viva la malla de un objeto borrado, y deshacer solo vuelve a enlazarla (ni se copia ni
+// se vuelve a subir a la GPU). Las texturas se comparten por handle, asi que la escena le pregunta al historial
 // (UsesTexture) antes de liberar una: no se borra mientras algun snapshot pueda volver a necesitarla.
 class UndoHistory
 {
@@ -34,10 +33,12 @@ public:
     // true si algun snapshot guardado usa la textura.
     bool UsesTexture(GLuint tex) const;
 
+    // Suelta todos los snapshots (y con ellos sus mallas). Llamar antes de destruir el contexto de GL.
+    void Clear();
+
 private:
     struct SceneState {
         std::vector<GameObject> objects;
-        std::vector<GLuint> meshIds;   // VAO que tenia cada objeto vivo al capturar: identidad de la malla
         int selected = -1;
     };
 

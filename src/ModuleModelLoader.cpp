@@ -301,3 +301,11 @@ std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale)
     }
     return outMeshes;
 }
+
+MeshPtr MakeSharedMesh(Mesh&& mesh)
+{
+    return MeshPtr(new Mesh(std::move(mesh)), [](Mesh* m) {
+        m->Destroy();
+        delete m;
+    });
+}

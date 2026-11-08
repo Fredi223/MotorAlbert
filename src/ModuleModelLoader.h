@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <glad/glad.h>
@@ -30,4 +31,9 @@ struct Mesh {
 // outUnitScale (opcional): factor de conversion a metros deducido del
 // UnitScaleFactor de los metadatos de Assimp (fallback 0.01 si el FBX
 // no trae esa metadata, asumiendo centimetros).
+// Malla compartida: la poseen los GameObject que la usan (duplicados incluidos) y los snapshots del
+// undo. Sus buffers de GPU se liberan cuando la suelta el ultimo (MakeSharedMesh pone ese deleter).
+using MeshPtr = std::shared_ptr<Mesh>;
+MeshPtr MakeSharedMesh(Mesh&& mesh);
+
 std::vector<Mesh> LoadModel(const std::string& path, float* outUnitScale = nullptr);

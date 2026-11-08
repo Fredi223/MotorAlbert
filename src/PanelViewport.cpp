@@ -72,7 +72,7 @@ void Editor::DrawViewport()
         {
             GameObject& go = *goPtr;
             int i = int(&go - &scene.objects[0]);
-            if (go.hidden || go.meshComp.mesh.vertices.empty()) continue;
+            if (go.hidden || !go.meshComp.mesh || go.meshComp.mesh->vertices.empty()) continue;
 
             float tHit = 0.0f;
 
