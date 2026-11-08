@@ -41,3 +41,11 @@ CLAUDE.md
 
 # ==== Guia de entrega (solo para uso nuestro, no se sube) ====
 docs/MotoresE1_*.pdf
+docs/MotoresE2*.pdf
+
+# ==== Escena Street (E2): solo se versiona el FBX y las 8 texturas que referencia ====
+Resources/Street/*.max
+Resources/Street/*.DAE
+Resources/Street/*.mtl
+Resources/Street/street2.FBX
+Resources/Street/building 06_ c .tga

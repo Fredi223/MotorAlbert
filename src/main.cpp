@@ -85,7 +85,7 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    Console::LogInfo("Inicializando motor - version E1");
+    Console::LogInfo("Inicializando motor - version E2");
     Console::LogInfo("Librerias: SDL %d.%d.%d, Assimp %u.%u.%u, ImGui %s, stb_image (texturas), GLM, GLAD",
         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION,
         aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision(), IMGUI_VERSION);
@@ -98,7 +98,7 @@ int main(int argc, char* argv[])
     renderer.Init(1280, 720);
 
     // La escena empieza vacia; RebuildOctree recalcula los limites del octree cada vez que se
-    // anade algo (la Baker House inicial, drag & drop o una primitiva).
+    // anade algo (la escena Street inicial, drag & drop o una primitiva).
     Scene scene;
     scene.defaultTexture = renderer.GetCheckerTexture();
 
@@ -107,12 +107,13 @@ int main(int argc, char* argv[])
     UndoHistory history;
     scene.isTextureUsedElsewhere = [&history](GLuint tex) { return history.UsesTexture(tex); };
 
-    // Baker House se carga al arrancar desde Resources/, que vive junto al ejecutable (CMake
-    // la copia ahi al compilar): asi funciona igual desde build/ que desde la carpeta de entrega.
+    // La escena Street (la pide la guia de la entrega 2) se carga al arrancar desde Resources/, que
+    // vive junto al ejecutable (CMake la copia ahi al compilar): asi funciona igual desde build/
+    // que desde la carpeta de entrega.
     {
         const char* basePath = SDL_GetBasePath();
-        const std::string bakerHouse = std::string(basePath ? basePath : "") + "Resources/BakerHouse.fbx";
-        scene.LoadFbx(bakerHouse);
+        const std::string street = std::string(basePath ? basePath : "") + "Resources/Street/Street environment_V01.FBX";
+        scene.LoadFbx(street);
     }
 
     Editor editor(window, scene, history, renderer, timing);
