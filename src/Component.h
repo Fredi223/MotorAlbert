@@ -78,7 +78,10 @@ struct ComponentMesh : ComponentOf<ComponentMesh, Component::Type::Mesh>
 
 struct ComponentMaterial : ComponentOf<ComponentMaterial, Component::Type::Material>
 {
-    TexturePtr texture;                 // recurso compartido (ResourceManager); nullptr = checker
+    TexturePtr texture;                 // recurso compartido (ResourceManager)
+    // Color difuso: multiplica la textura. Sin textura se dibuja este color liso, salvo que sea
+    // blanco: entonces la checker (para ver las UV), como en la Entrega 1.
+    glm::vec3 color{ 1.0f };
 
     bool operator==(const ComponentMaterial&) const = default;
 };

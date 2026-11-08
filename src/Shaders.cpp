@@ -39,13 +39,15 @@ in vec2 TexCoord;
 out vec4 FragColor;
 
 uniform sampler2D uTexture;
+uniform vec3 uColor;        // color difuso del material
+uniform bool uUseTexture;   // false = color liso (material sin textura y con color)
 
 void main()
 {
     vec3 light = normalize(vec3(0.3, 0.5, 0.8));
     float diff = max(dot(normalize(Normal), light), 0.0);
 
-    vec3 texColor = texture(uTexture, TexCoord).rgb;
+    vec3 texColor = uUseTexture ? texture(uTexture, TexCoord).rgb * uColor : uColor;
     vec3 finalColor = texColor * (0.4 + diff * 0.6);   // luz ambiente 0.4 + difusa
 
     FragColor = vec4(finalColor, 1.0);

@@ -44,6 +44,7 @@ namespace
         {
             const auto& material = static_cast<const ComponentMaterial&>(c);
             j["texture"] = material.texture ? material.texture->uid : 0;
+            j["color"] = Vec3ToJson(material.color);
             break;
         }
         case Component::Type::Camera:
@@ -90,6 +91,7 @@ namespace
                 material.texture = resources.GetTexture(uid);
                 if (!material.texture) Console::LogError("Escena: %s usa una textura que no existe (UID %llu)", go.name.c_str(), (unsigned long long)uid);
             }
+            material.color = glm::clamp(Vec3FromJson(j.value("color", json()), glm::vec3(1.0f)), 0.0f, 1.0f);
             added = &material;
         }
         else if (type == Component::TypeName(Component::Type::Camera))

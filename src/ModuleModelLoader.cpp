@@ -161,6 +161,14 @@ static void ProcessAIMesh(
     {
         mesh.texturePath = path.C_Str();
     }
+    else
+    {
+        // Sin textura, el material solo trae un color (p. ej. el asfalto y el cesped de Street). Con
+        // textura se ignora: 3ds Max deja un gris 0.588 por defecto que oscureceria la textura.
+        aiColor3D diffuse(1.0f, 1.0f, 1.0f);
+        if (AI_SUCCESS == material->Get(AI_MATKEY_COLOR_DIFFUSE, diffuse))
+            mesh.diffuseColor = glm::clamp(glm::vec3(diffuse.r, diffuse.g, diffuse.b), 0.0f, 1.0f);
+    }
 
     // --- Vertices ---
     mesh.vertices.reserve(ai_mesh->mNumVertices * 11);

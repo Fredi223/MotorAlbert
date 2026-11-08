@@ -134,9 +134,12 @@ static void DrawMaterial(ComponentMaterial& comp, const GameObject& go, Resource
         Console::LogInfo("Textura de %s: %s", go.name.c_str(), chosen ? ResourceName(resources, chosen) : "<none>");
     }
 
+    ImGui::ColorEdit3("Color", &comp.color.x);
+
     if (!comp.texture)
     {
-        ImGui::TextDisabled("Sin textura (se dibuja con la checker)");
+        ImGui::TextDisabled(comp.color == glm::vec3(1.0f) ? "Sin textura y color blanco: se dibuja la checker"
+                                                          : "Sin textura: se dibuja el color liso");
         return;
     }
 

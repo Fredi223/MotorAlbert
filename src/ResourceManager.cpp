@@ -234,7 +234,7 @@ static void ConvertNode(const ModelNode& node, const std::vector<uint64_t>& mesh
     out.name = node.name;
     out.transform = node.transform;
     for (unsigned int idx : node.meshIndices)
-        out.meshes.push_back({ meshUids[idx], textureUids[idx], meshes[idx].name });
+        out.meshes.push_back({ meshUids[idx], textureUids[idx], meshes[idx].name, meshes[idx].diffuseColor });
     for (const ModelNode& child : node.children)
         ConvertNode(child, meshUids, textureUids, meshes, out.children.emplace_back());
 }
@@ -259,6 +259,7 @@ uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& ext
 
     const int64_t stamp = FileStamp(asset);
     bool upToDate = MetaUid(meta) != 0 && meta.value("timestamp", int64_t(0)) == stamp &&
+        meta.value("format", uint32_t(0)) == MODEL_FORMAT_VERSION &&   // un .model antiguo se rehace
         fs::exists(LibraryFile(ResourceType::Model, modelUid));
     for (uint64_t uid : meshUids)
         upToDate = upToDate && uid != 0 && fs::exists(LibraryFile(ResourceType::Mesh, uid));
@@ -326,7 +327,7 @@ uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& ext
         json metaMeshes = json::array();
         for (size_t i = 0; i < meshUids.size(); ++i)
             metaMeshes.push_back({ { "uid", meshUids[i] }, { "name", meshNames[i] } });
-        meta = { { "uid", modelUid }, { "type", "model" }, { "timestamp", stamp }, { "meshes", metaMeshes } };
+        meta = { { "uid", modelUid }, { "type", "model" }, { "format", MODEL_FORMAT_VERSION }, { "timestamp", stamp }, { "meshes", metaMeshes } };
         WriteMeta(asset, meta);
         Console::LogInfo("Importado modelo %s -> Library/Models/%llu.model (%zu mallas)", rel.c_str(),
             (unsigned long long)modelUid, meshUids.size());

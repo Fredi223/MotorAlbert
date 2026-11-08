@@ -71,7 +71,9 @@ ajustan en **Configuration > Input / Camera**.
   - **Mesh**: desplegable con todas las mallas importadas (o arrastrar una malla desde los
     paneles Assets o Resources), UID y referencias, vértices / índices y opciones de normales.
   - **Material**: desplegable con todas las texturas importadas (o arrastrar una), tamaño,
-    referencias y vista previa. `<none>` = textura de cuadros.
+    referencias y vista previa, y el **color** del material (multiplica la textura). Sin
+    textura se dibuja el color liso; sin textura y en blanco, la textura de cuadros. Así salen
+    el asfalto y las aceras de Street, que en el FBX solo tienen color, no textura.
   - **Camera**: FOV, near, far y *Culling camera* (el frustum culling se hace con esta cámara
     en lugar de la del editor, para poder ver desde fuera lo que descarta).
   - **Rotator**: grados por segundo en cada eje; el objeto solo gira durante el Play.
@@ -130,7 +132,8 @@ Además de lo que pide la entrega:
 
 - **Formato propio (`Library/`)**: `Meshes/<uid>.mesh` (cabecera + vértices + índices),
   `Textures/<uid>.tex` (RGBA8, o DXT con mipmaps si viene de un DDS) y `Models/<uid>.model`
-  (el árbol de nodos del FBX con el transform y los UIDs de malla y textura de cada nodo).
+  (el árbol de nodos del FBX con el transform, los UIDs de malla y textura y el color del
+  material de cada nodo).
   Assimp y stb_image solo se usan al importar; el resto del tiempo todo se carga de
   `Library/`. Las primitivas también son recursos (con UIDs fijos 1–5).
 - **`.meta`**: cada asset tiene un `.meta` (JSON) con su UID, su fecha y, en los FBX, los

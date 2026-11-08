@@ -17,12 +17,18 @@
 //
 // Todas las rutas son UTF-8.
 
-// Una malla dentro de un nodo del modelo: el recurso de malla y el de su textura (0 = sin textura).
+// Version de los .model. La 2 anade el color del material a cada malla. El .meta del modelo la
+// guarda ("format") para reimportar los .model de una version anterior.
+constexpr uint32_t MODEL_FORMAT_VERSION = 2;
+
+// Una malla dentro de un nodo del modelo: el recurso de malla, el de su textura (0 = sin textura)
+// y el color del material.
 struct ModelMeshRef
 {
     uint64_t meshUid = 0;
     uint64_t textureUid = 0;
     std::string name;
+    glm::vec3 color{ 1.0f };
 };
 
 // Nodo de un modelo importado: transformacion local (relativa al padre) y las mallas que lleva.

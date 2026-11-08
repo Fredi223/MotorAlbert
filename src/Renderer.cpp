@@ -21,6 +21,8 @@ void Renderer::Init(int width, int height)
     uModelLoc = glGetUniformLocation(shaderProgram, "uModel");
     uViewLoc = glGetUniformLocation(shaderProgram, "uView");
     uProjLoc = glGetUniformLocation(shaderProgram, "uProjection");
+    uColorLoc = glGetUniformLocation(shaderProgram, "uColor");
+    uUseTextureLoc = glGetUniformLocation(shaderProgram, "uUseTexture");
 
     normalUModelLoc = glGetUniformLocation(normalShaderProgram, "uModel");
     normalUViewLoc = glGetUniformLocation(normalShaderProgram, "uView");
@@ -291,8 +293,14 @@ RenderStats Renderer::Render(const Scene& scene, const glm::mat4& view, const gl
         if (frustumCulling && !AABBInsideFrustum(frustum, go.worldAabbMin, go.worldAabbMax))
             continue;
 
+        // Con textura: textura x color. Sin textura: el color liso, o la checker si el color es blanco.
+        const GLuint texture = go.ActiveTexture();
+        const glm::vec3 color = go.ActiveColor();
+        const bool flatColor = texture == 0 && color != glm::vec3(1.0f);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, go.ActiveTexture() != 0 ? go.ActiveTexture() : checkerTexture);
+        glBindTexture(GL_TEXTURE_2D, texture != 0 ? texture : checkerTexture);
+        glUniform3fv(uColorLoc, 1, glm::value_ptr(color));
+        glUniform1i(uUseTextureLoc, flatColor ? 0 : 1);
 
         go.Draw(uModelLoc);
         stats.drawn++;

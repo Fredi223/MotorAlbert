@@ -16,6 +16,12 @@ GLuint GameObject::ActiveTexture() const
     return (mat && mat->enabled && mat->texture) ? mat->texture->id : 0;
 }
 
+glm::vec3 GameObject::ActiveColor() const
+{
+    const ComponentMaterial* mat = components.Get<ComponentMaterial>();
+    return (mat && mat->enabled) ? mat->color : glm::vec3(1.0f);
+}
+
 bool GameObject::IsHiddenInHierarchy() const
 {
     for (const GameObject* go = this; go; go = go->parent)

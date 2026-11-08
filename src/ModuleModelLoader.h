@@ -16,6 +16,7 @@ struct Mesh {
     GLuint EBO = 0;
     std::string name;          // nombre de la malla en el archivo (vacio en las primitivas)
     std::string texturePath;   // ruta de la textura difusa tal como la guarda el material del FBX
+    glm::vec3 diffuseColor{ 1.0f };   // color difuso del material (blanco si tiene textura)
     unsigned int indexCount = 0;
     unsigned int vertexCount = 0;
     std::vector<float> vertices;

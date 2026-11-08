@@ -109,7 +109,9 @@ GameObject* Scene::AddChild(GameObject* parent, std::unique_ptr<GameObject> chil
 static void SetMeshOn(GameObject& go, const ModelMeshRef& ref, ResourceManager& resources)
 {
     go.components.Add<ComponentMesh>().mesh = resources.GetMesh(ref.meshUid);
-    go.components.Add<ComponentMaterial>().texture = ref.textureUid ? resources.GetTexture(ref.textureUid) : nullptr;
+    ComponentMaterial& material = go.components.Add<ComponentMaterial>();
+    material.texture = ref.textureUid ? resources.GetTexture(ref.textureUid) : nullptr;
+    material.color = ref.color;
 }
 
 // Un nodo con una sola malla la lleva el mismo; con varias, cada una va en un hijo (un GameObject

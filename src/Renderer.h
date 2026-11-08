@@ -69,7 +69,7 @@ private:
     void FlushLines(const glm::mat4& viewProj);
 
     GLuint shaderProgram = 0, normalShaderProgram = 0, gridShaderProgram = 0, lineShaderProgram = 0;
-    GLint uModelLoc = -1, uViewLoc = -1, uProjLoc = -1;
+    GLint uModelLoc = -1, uViewLoc = -1, uProjLoc = -1, uColorLoc = -1, uUseTextureLoc = -1;
     GLint normalUModelLoc = -1, normalUViewLoc = -1, normalUProjLoc = -1;
     GLint normalULengthLoc = -1, normalUColorLoc = -1;
     GLint gridUViewLoc = -1, gridUProjLoc = -1;

@@ -45,6 +45,8 @@ struct GameObject : GameObjectData
     // Textura con la que se dibuja: la del componente Material si existe y esta activo; 0 si no
     // (el renderer pone entonces la checker).
     GLuint ActiveTexture() const;
+    // Color del componente Material si existe y esta activo; blanco si no.
+    glm::vec3 ActiveColor() const;
 
     // true si el o alguno de sus antecesores esta oculto.
     bool IsHiddenInHierarchy() const;

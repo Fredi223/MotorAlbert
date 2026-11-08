@@ -8,7 +8,7 @@
 
 namespace
 {
-    constexpr uint32_t VERSION = 1;
+    constexpr uint32_t VERSION = 1;                     // de .mesh y .tex (la de .model esta en el .h)
     constexpr uint32_t VERTEX_FLOATS = 11;              // pos3 normal3 uv2 color3 (ver Mesh::SetupMesh)
     constexpr uint32_t MAX_COUNT = 256u * 1024 * 1024;  // tope de cordura para un archivo corrupto
 
@@ -83,7 +83,7 @@ namespace
             GetArray(chars);
             return std::string(chars.begin(), chars.end());
         }
-        bool Header(uint32_t magic) { return Get<uint32_t>() == magic && Get<uint32_t>() == VERSION && ok; }
+        bool Header(uint32_t magic, uint32_t version = VERSION) { return Get<uint32_t>() == magic && Get<uint32_t>() == version && ok; }
     };
 
     void PutNode(Writer& w, const ModelNodeData& node)
@@ -96,6 +96,7 @@ namespace
             w.Put(m.meshUid);
             w.Put(m.textureUid);
             w.PutString(m.name);
+            w.Put(m.color);
         }
         w.Put(uint32_t(node.children.size()));
         for (const ModelNodeData& child : node.children) PutNode(w, child);
@@ -113,6 +114,7 @@ namespace
             m.meshUid = r.Get<uint64_t>();
             m.textureUid = r.Get<uint64_t>();
             m.name = r.GetString();
+            m.color = glm::clamp(r.Get<glm::vec3>(), 0.0f, 1.0f);
             node.meshes.push_back(std::move(m));
         }
         const uint32_t childCount = r.Get<uint32_t>();
@@ -196,7 +198,7 @@ bool SaveModelFile(const std::string& path, const ModelNodeData& root)
 {
     Writer w;
     w.Put(MODEL_MAGIC);
-    w.Put(VERSION);
+    w.Put(MODEL_FORMAT_VERSION);
     PutNode(w, root);
     return w.SaveTo(path);
 }
@@ -204,7 +206,7 @@ bool SaveModelFile(const std::string& path, const ModelNodeData& root)
 bool LoadModelFile(const std::string& path, ModelNodeData& out)
 {
     Reader r;
-    if (!r.Load(path) || !r.Header(MODEL_MAGIC)) return false;
+    if (!r.Load(path) || !r.Header(MODEL_MAGIC, MODEL_FORMAT_VERSION)) return false;
     out = ModelNodeData{};
     GetNode(r, out, 0);
     return r.ok;
