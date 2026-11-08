@@ -96,6 +96,12 @@ if(WIN32)
     target_link_libraries(MotorAlbert PRIVATE psapi)   # GetProcessMemoryInfo
 endif()
 
+# Avisos del compilador al nivel 4 (MSVC usa el 1 por defecto con este generador): solo para el codigo
+# del motor. Las librerias de vcpkg ya se incluyen como externas (/external:W0) y no generan avisos.
+if(MSVC)
+    target_compile_options(MotorAlbert PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4>)
+endif()
+
 # Assets/ se copia junto al ejecutable: el motor la busca ahi (SDL_GetBasePath), tanto en
 # build/ como en la carpeta de entrega, y crea Library/ a su lado al arrancar (no se copia: se
 # genera). Es un target propio (y no un POST_BUILD del ejecutable) para que se copie tambien

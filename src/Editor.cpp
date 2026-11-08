@@ -92,7 +92,7 @@ void Editor::ProcessEvent(const SDL_Event& e)
         }
         else if (sc == SDL_SCANCODE_N && !io.WantTextInput)
         {
-            Uint32 now = SDL_GetTicks();
+            const Uint64 now = SDL_GetTicks();
             if (now - lastNormalsToggleMs > NORMALS_TOGGLE_DEBOUNCE) {
                 renderer.showNormals = !renderer.showNormals;
                 Console::LogInfo("Mostrar normales: %s", renderer.showNormals ? "ON" : "OFF");
@@ -285,10 +285,10 @@ void Editor::DrawMainMenuBar()
     if (showAbout)
     {
         ImGui::Begin("About", &showAbout);
-        ImGui::Text("Motor Albert v1.0");
+        ImGui::Text("Motor Albert v2.0");
         ImGui::Separator();
         ImGui::Text("Autores: Albert Frederic Bailen Ruesca");
-        ImGui::Text("Librerias usadas: SDL3, OpenGL, ImGui, Assimp, stb_image, GLM");
+        ImGui::Text("Librerias usadas: SDL3, OpenGL (GLAD), ImGui, Assimp, stb_image, GLM, nlohmann-json");
         ImGui::Text("Licencia: MIT License");
         ImGui::End();
     }

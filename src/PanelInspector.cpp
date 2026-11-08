@@ -2,7 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstring>
+#include <cstdio>
 #include <string>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -190,8 +190,7 @@ void Editor::DrawInspector()
 
     GameObject& go = *selectedObject;
     char nameBuf[128];
-    std::strncpy(nameBuf, go.name.c_str(), sizeof(nameBuf));
-    nameBuf[sizeof(nameBuf) - 1] = '\0';
+    std::snprintf(nameBuf, sizeof(nameBuf), "%s", go.name.c_str());
     if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf)))
         go.name = std::string(nameBuf);
     ImGui::TextDisabled("Parent: %s | Children: %zu",

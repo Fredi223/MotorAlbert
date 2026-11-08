@@ -1,0 +1,127 @@
+{
+  "meshes": [
+    {
+      "name": "City_building_004",
+      "uid": 4229505675561472366
+    },
+    {
+      "name": "City_building_001",
+      "uid": 1593246511059003849
+    },
+    {
+      "name": "City_building_007",
+      "uid": 4076574737201207072
+    },
+    {
+      "name": "City_building_008",
+      "uid": 12343631668898273396
+    },
+    {
+      "name": "Line002",
+      "uid": 2211365558636939132
+    },
+    {
+      "name": "Plane001",
+      "uid": 10251289516209104432
+    },
+    {
+      "name": "City_building_010",
+      "uid": 17940970259911519777
+    },
+    {
+      "name": "City_building_011",
+      "uid": 11994993213444978539
+    },
+    {
+      "name": "City_building_013",
+      "uid": 12188033504919795300
+    },
+    {
+      "name": "City_building_014",
+      "uid": 16507454411371461432
+    },
+    {
+      "name": "City_building_016",
+      "uid": 16669039414164925275
+    },
+    {
+      "name": "City_building_017",
+      "uid": 1105959695857163387
+    },
+    {
+      "name": "City_building_022",
+      "uid": 14348928156220649745
+    },
+    {
+      "name": "City_building_023",
+      "uid": 8381279962389292277
+    },
+    {
+      "name": "City_building_024",
+      "uid": 14915474652681298580
+    },
+    {
+      "name": "City_building_026",
+      "uid": 17565045952002981761
+    },
+    {
+      "name": "City_building_028",
+      "uid": 8241547130830774690
+    },
+    {
+      "name": "Object010",
+      "uid": 13348768675114697573
+    },
+    {
+      "name": "City_building_030",
+      "uid": 2205356237458653210
+    },
+    {
+      "name": "City_building_031",
+      "uid": 1334881347852175555
+    },
+    {
+      "name": "City_building_032",
+      "uid": 986899254225937188
+    },
+    {
+      "name": "City_building_033",
+      "uid": 2938382668684834130
+    },
+    {
+      "name": "City_building_034",
+      "uid": 16051247429231370369
+    },
+    {
+      "name": "City_building_035",
+      "uid": 13245679603852995440
+    },
+    {
+      "name": "City_building_036",
+      "uid": 10921818129226746837
+    },
+    {
+      "name": "City_building_037",
+      "uid": 3931297994357514563
+    },
+    {
+      "name": "City_building_038",
+      "uid": 841305690831060742
+    },
+    {
+      "name": "City_building_039",
+      "uid": 16445653704133954463
+    },
+    {
+      "name": "City_building_040",
+      "uid": 1384023423487756928
+    },
+    {
+      "name": "City_building_041",
+      "uid": 10056640534446532461
+    }
+  ],
+  "timestamp": 134386423901484924,
+  "type": "model",
+  "uid": 5606642716347757407
+}

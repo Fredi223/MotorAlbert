@@ -74,7 +74,7 @@ bool InitOpenGL(SDL_Window** window, SDL_GLContext* context, int width, int heig
 // ============================================================
 // Motor (Renderer, Scene, FrameTiming) y editor (Editor, UndoHistory) se crean aqui y se conectan;
 // el bucle solo reparte los eventos al editor, le pide un frame y mide el tiempo.
-int main(int argc, char* argv[])
+int main(int, char*[])   // SDL exige esta firma; los argumentos no se usan
 {
     Console::Init();
 
@@ -87,7 +87,7 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    Console::LogInfo("Inicializando motor - version E2");
+    Console::LogInfo("Inicializando Motor Albert v2.0");
     Console::LogInfo("Librerias: SDL %d.%d.%d, Assimp %u.%u.%u, ImGui %s, stb_image (texturas), GLM, GLAD",
         SDL_MAJOR_VERSION, SDL_MINOR_VERSION, SDL_MICRO_VERSION,
         aiGetVersionMajor(), aiGetVersionMinor(), aiGetVersionRevision(), IMGUI_VERSION);

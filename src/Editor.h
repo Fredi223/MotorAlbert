@@ -171,8 +171,8 @@ private:
     float wheelDelta = 0.0f;       // muescas de rueda acumuladas en el frame (dentro del viewport)
     bool firstMouse = true;
 
-    Uint32 lastNormalsToggleMs = 0;
-    static constexpr Uint32 NORMALS_TOGGLE_DEBOUNCE = 150;
+    Uint64 lastNormalsToggleMs = 0;
+    static constexpr Uint64 NORMALS_TOGGLE_DEBOUNCE = 150;
 
     bool dockLayoutBuilt = false;
 

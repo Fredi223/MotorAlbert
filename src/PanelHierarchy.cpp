@@ -1,7 +1,7 @@
 #include "Editor.h"
 
 #include <algorithm>
-#include <cstring>
+#include <cstdio>
 
 #include "imgui.h"
 #include "Logger.h"
@@ -12,8 +12,7 @@ static constexpr const char* DND_GAMEOBJECT = "DND_GAMEOBJECT";   // payload: ui
 void Editor::BeginRename(const GameObject& go)
 {
     renameTargetUid = go.uid;
-    std::strncpy(renameBuf, go.name.c_str(), sizeof(renameBuf) - 1);
-    renameBuf[sizeof(renameBuf) - 1] = '\0';
+    std::snprintf(renameBuf, sizeof(renameBuf), "%s", go.name.c_str());
     openRenamePopup = true;   // el popup se abre fuera del arbol: dentro de un TreeNode cambia la pila de IDs
 }
 
