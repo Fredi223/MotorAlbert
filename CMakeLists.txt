@@ -46,6 +46,7 @@ add_executable(MotorAlbert
     src/Editor.cpp
     src/Editor.h
     src/EditorCamera.cpp
+    src/PanelAssets.cpp
     src/PanelConfiguration.cpp
     src/PanelHierarchy.cpp
     src/PanelInspector.cpp

@@ -25,6 +25,7 @@ struct GameObject;
 //   PanelInspector.cpp     Inspector
 //   PanelConfiguration.cpp Configuration
 //   PanelResources.cpp     Resources (recursos importados y sus referencias)
+//   PanelAssets.cpp        Assets (arbol de la carpeta Assets/, importar y borrar)
 //   PanelHierarchy.cpp     Hierarchy y popup de renombrar
 //   PanelViewport.cpp      Viewport y picking
 class Editor
@@ -48,6 +49,15 @@ public:
     // Assets y lo aceptan los campos Mesh y Texture del Inspector.
     static constexpr const char* DND_RESOURCE = "DND_RESOURCE";
 
+    // Nodo del arbol de Assets/ (sin los .meta) que dibuja el panel Assets. Se reconstruye solo cuando
+    // cambia (importar, borrar, Refresh), no en cada frame.
+    struct AssetNode {
+        std::string name;
+        std::string assetPath;   // relativa a Assets/, con '/'
+        bool isDirectory = false;
+        std::vector<AssetNode> children;
+    };
+
     // FOV, near y far de una camara (la del editor en Configuration y las de juego en el Inspector).
     static void DrawLensFields(ComponentCamera& lens);
 
@@ -69,6 +79,14 @@ private:
     void DrawInspector();
     void DrawConfiguration();
     void DrawResources();
+    void DrawAssets();
+
+    // --- PanelAssets.cpp ---
+    void RebuildAssetTree();
+    void DrawAssetNode(const AssetNode& node);
+    // Borra el asset y quita sus recursos de los GameObjects que los usan. Vacia el historial de undo:
+    // borrar un archivo no se puede deshacer, y un snapshot podria devolver un recurso que ya no existe.
+    void DeleteAsset(const std::string& assetPath);
     void DrawHierarchy();
     void DrawViewport();
 
@@ -117,6 +135,7 @@ private:
     bool showHierarchy = true;
     bool showConfig = true;
     bool showResources = true;
+    bool showAssets = true;
     bool showAbout = false;
 
     // Viewport: lo calcula DrawViewport, asi que el resto del frame usa el valor del frame anterior
@@ -153,4 +172,10 @@ private:
 
     // Resources
     bool onlyLoadedResources = false;
+
+    // Assets
+    AssetNode assetTree;
+    bool assetTreeDirty = true;
+    std::string assetToDelete;   // pendiente de confirmar en el popup
+    bool openDeleteAssetPopup = false;
 };

@@ -132,6 +132,7 @@ void Editor::DrawFrame()
     DrawInspector();
     DrawConfiguration();
     DrawResources();
+    DrawAssets();
 
     // Matrices de mundo al dia con lo editado este frame (Inspector) antes de dibujar.
     scene.UpdateTransforms();
@@ -201,6 +202,7 @@ void Editor::DrawMainMenuBar()
             ImGui::MenuItem("Inspector", nullptr, &showInspector);
             ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy);
             ImGui::MenuItem("Configuration", nullptr, &showConfig);
+            ImGui::MenuItem("Assets", nullptr, &showAssets);
             ImGui::MenuItem("Resources", nullptr, &showResources);
             ImGui::MenuItem("Normals", nullptr, &renderer.showNormals);
             ImGui::MenuItem("Face Normals", nullptr, &renderer.showFaceNormals);
@@ -305,6 +307,7 @@ void Editor::DrawDockspace()
         ImGui::DockBuilderDockWindow("Inspector", dock_right);       // derecha
 
         ImGui::DockBuilderDockWindow("Configuration", dock_bottom);
+        ImGui::DockBuilderDockWindow("Assets", dock_bottom);
         ImGui::DockBuilderDockWindow("Resources", dock_bottom);
         ImGui::DockBuilderDockWindow("Console", dock_bottom);        // abajo
         ImGui::DockBuilderFinish(dockspace_id);
@@ -327,6 +330,7 @@ void Editor::ImportDroppedFile(const std::string& filePath)
     }
 
     const uint64_t uid = resources.ImportExternalFile(filePath);
+    assetTreeDirty = true;   // puede haber archivos nuevos en Assets/
     if (uid == 0) return;
     if (type == ResourceType::Texture)
         AssignDroppedTexture(uid);

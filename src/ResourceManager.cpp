@@ -135,7 +135,13 @@ void ResourceManager::Init(const std::string& baseDir)
         }
     }
 
+    ImportAll();
+}
+
+void ResourceManager::ImportAll()
+{
     // Todo Assets/: primero las texturas, para que los FBX encuentren las suyas ya importadas.
+    std::error_code ec;
     std::vector<fs::path> textures, models;
     for (const auto& item : fs::recursive_directory_iterator(assetsDir, fs::directory_options::skip_permission_denied, ec))
     {
@@ -407,3 +413,33 @@ bool ResourceManager::LoadModel(uint64_t uid, ModelNodeData& out) const
     }
     return true;
 }
+
+std::vector<uint64_t> ResourceManager::DeleteAsset(const std::string& assetPath)
+{
+    std::vector<uint64_t> removed;
+    if (assetPath.empty()) return removed;   // los internos (primitivas) no se pueden borrar
+
+    // Sus recursos (un FBX tiene el modelo y sus mallas) fuera del registro y de Library. Lo que este
+    // cargado sigue vivo mientras alguien lo use: quien llama debe soltarlo (los GameObjects y el undo).
+    std::error_code ec;
+    for (auto it = entries.begin(); it != entries.end();)
+    {
+        if (it->second.assetPath != assetPath) { ++it; continue; }
+        fs::remove(FromUtf8(it->second.libraryPath), ec);
+        removed.push_back(it->first);
+        it = entries.erase(it);
+    }
+    byAssetPath.erase(assetPath);
+
+    const fs::path asset = assetsDir / FromUtf8(assetPath);
+    fs::remove(asset, ec);
+    fs::remove(MetaPath(asset), ec);
+    if (fs::exists(asset))
+        Console::LogError("No se pudo borrar Assets/%s", assetPath.c_str());
+    else
+        Console::LogInfo("Asset borrado: Assets/%s (%zu recursos fuera de Library)", assetPath.c_str(), removed.size());
+    return removed;
+}
+
+fs::path ResourceManager::PathFromUtf8(const std::string& s) { return FromUtf8(s); }
+std::string ResourceManager::PathToUtf8(const fs::path& p) { return ToUtf8(p); }

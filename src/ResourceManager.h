@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 #include <glad/glad.h>
 
 #include "LibraryFormat.h"
@@ -46,6 +47,9 @@ public:
     // existe, genera las primitivas e importa todo Assets/.
     void Init(const std::string& baseDir);
 
+    // Recorre Assets/ e importa lo que no este importado o haya cambiado (Init y el boton Refresh).
+    void ImportAll();
+
     // Importa un archivo que esta dentro de Assets/ (si no estaba importado o ha cambiado) y devuelve
     // el UID de su recurso principal: la textura o el modelo. 0 si no es un formato soportado o falla.
     uint64_t ImportAsset(const std::string& absolutePath);
@@ -54,6 +58,10 @@ public:
     // tambien las texturas que encuentre junto al original. Si ya hay un archivo con ese nombre en
     // Assets/, se usa ese. Devuelve como ImportAsset.
     uint64_t ImportExternalFile(const std::string& absolutePath);
+
+    // Borra un asset: el archivo, su .meta y sus recursos de Library (un FBX: el modelo y sus mallas).
+    // Devuelve los UIDs quitados del registro: quien llama debe soltar las referencias que tenga a ellos.
+    std::vector<uint64_t> DeleteAsset(const std::string& assetPath);
 
     // UID del recurso principal de un asset (ruta relativa a Assets/). 0 si no esta importado.
     uint64_t FindByAssetPath(const std::string& assetPath) const;
@@ -69,6 +77,10 @@ public:
 
     // Ruta relativa a Assets/ (con '/'), o vacia si el archivo no esta dentro de Assets/.
     std::string RelativeToAssets(const std::filesystem::path& file) const;
+
+    // Rutas UTF-8 <-> filesystem (con std::string a secas, Windows usaria la codificacion ANSI).
+    static std::filesystem::path PathFromUtf8(const std::string& s);
+    static std::string PathToUtf8(const std::filesystem::path& p);
 
     static ResourceType TypeOfExtension(const std::string& path, bool& supported);
 
