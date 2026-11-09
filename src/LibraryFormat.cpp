@@ -90,6 +90,13 @@ namespace
     {
         w.PutString(node.name);
         w.Put(node.transform);
+        w.Put(node.kind);
+        if (node.kind == NodeKind::Camera)
+        {
+            w.Put(node.cameraFovDeg);
+            w.Put(node.cameraNear);
+            w.Put(node.cameraFar);
+        }
         w.Put(uint32_t(node.meshes.size()));
         for (const ModelMeshRef& m : node.meshes)
         {
@@ -107,6 +114,14 @@ namespace
         if (depth > 256) { r.ok = false; return; }   // un arbol tan profundo solo puede ser basura
         node.name = r.GetString();
         node.transform = r.Get<glm::mat4>();
+        node.kind = r.Get<NodeKind>();
+        if (uint32_t(node.kind) > uint32_t(NodeKind::Light)) { r.ok = false; return; }
+        if (node.kind == NodeKind::Camera)
+        {
+            node.cameraFovDeg = r.Get<float>();
+            node.cameraNear = r.Get<float>();
+            node.cameraFar = r.Get<float>();
+        }
         const uint32_t meshCount = r.Get<uint32_t>();
         for (uint32_t i = 0; r.ok && i < meshCount; ++i)
         {

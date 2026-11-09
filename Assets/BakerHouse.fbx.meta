@@ -1,5 +1,16 @@
 {
   "format": 2,
+  "import": {
+    "axis": "custom",
+    "customRotation": [
+      90.0,
+      0.0,
+      0.0
+    ],
+    "globalScale": 1.0,
+    "ignoreCameras": true,
+    "ignoreLights": true
+  },
   "meshes": [
     {
       "name": "Untitled.001",

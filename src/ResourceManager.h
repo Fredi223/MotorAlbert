@@ -79,6 +79,16 @@ public:
     // notan nada. false si no es una textura importada o falla.
     bool ApplyTextureImportOptions(const std::string& assetPath, const TextureImportOptions& options);
 
+    // Igual para un modelo (FBX). Reimporta el .model con los mismos UIDs; las instancias que ya estan en
+    // la escena no cambian (cada GameObject guarda su propio transform), solo las nuevas.
+    ModelImportOptions GetModelImportOptions(const std::string& assetPath) const;
+    bool ApplyModelImportOptions(const std::string& assetPath, const ModelImportOptions& options);
+
+    // Lo que trae el FBX segun su ultimo importado (del .meta): nodos del .model, y camaras y luces
+    // del archivo (se importen o no).
+    struct ModelInfo { int nodes = 0, cameras = 0, lights = 0; };
+    ModelInfo GetModelInfo(const std::string& assetPath) const;
+
     const Entry* Find(uint64_t uid) const;
     const std::map<uint64_t, Entry>& Entries() const { return entries; }
     std::string AssetsDir() const;
@@ -97,7 +107,8 @@ private:
     uint64_t ImportTexture(const std::filesystem::path& asset, const TextureImportOptions* forced = nullptr);
     // Si la textura esta cargada, la vuelve a leer de Library en el mismo Texture (nuevo id de GL).
     void ReloadTexture(uint64_t uid);
-    uint64_t ImportModel(const std::filesystem::path& asset, const std::filesystem::path& extraTextureDir);
+    uint64_t ImportModel(const std::filesystem::path& asset, const std::filesystem::path& extraTextureDir,
+        const ModelImportOptions* forced = nullptr);
     std::filesystem::path LibraryFile(ResourceType type, uint64_t uid) const;
     Entry& Register(uint64_t uid, ResourceType type, const std::string& name, const std::string& assetPath);
 

@@ -96,6 +96,33 @@ namespace
         o.flipY = j.value("flipY", false);
         return o;
     }
+
+    // Lo mismo para los modelos.
+    constexpr const char* AXIS_NAMES[] = { "y_up", "z_up", "custom" };
+
+    json ModelOptionsToJson(const ModelImportOptions& o)
+    {
+        return { { "globalScale", o.globalScale }, { "axis", AXIS_NAMES[size_t(o.axis)] },
+            { "customRotation", { o.customRotation.x, o.customRotation.y, o.customRotation.z } },
+            { "ignoreCameras", o.ignoreCameras }, { "ignoreLights", o.ignoreLights } };
+    }
+
+    ModelImportOptions ModelOptionsFromMeta(const json& meta)
+    {
+        ModelImportOptions o;
+        const auto it = meta.find("import");
+        if (it == meta.end() || !it->is_object()) return o;
+        const json& j = *it;
+        if (const auto s = j.find("globalScale"); s != j.end() && s->is_number())
+            o.globalScale = std::max(0.0001f, s->get<float>());   // escala 0 dejaria el modelo sin matriz invertible
+        o.axis = EnumFromJson(j, "axis", AXIS_NAMES, o.axis);
+        if (const auto r = j.find("customRotation"); r != j.end() && r->is_array() && r->size() == 3 &&
+            (*r)[0].is_number() && (*r)[1].is_number() && (*r)[2].is_number())
+            o.customRotation = glm::vec3((*r)[0].get<float>(), (*r)[1].get<float>(), (*r)[2].get<float>());
+        o.ignoreCameras = j.value("ignoreCameras", true);
+        o.ignoreLights = j.value("ignoreLights", true);
+        return o;
+    }
 }
 
 ResourceType ResourceManager::TypeOfExtension(const std::string& path, bool& supported)
@@ -276,13 +303,26 @@ static void ConvertNode(const ModelNode& node, const std::vector<uint64_t>& mesh
 {
     out.name = node.name;
     out.transform = node.transform;
+    out.kind = node.kind;
+    out.cameraFovDeg = node.cameraFovDeg;
+    // Near y far tal cual: escalarlos con la escala de unidades los dejaba inservibles (Street trae
+    // 0.1 y 100, que con su escala serian 1 mm y 1 m) y coinciden con los de la camara por defecto.
+    out.cameraNear = std::max(0.001f, node.cameraNear);
+    out.cameraFar = std::max(out.cameraNear * 2.0f, node.cameraFar);
     for (unsigned int idx : node.meshIndices)
         out.meshes.push_back({ meshUids[idx], textureUids[idx], meshes[idx].name, meshes[idx].diffuseColor });
     for (const ModelNode& child : node.children)
         ConvertNode(child, meshUids, textureUids, meshes, out.children.emplace_back());
 }
 
-uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& extraTextureDir)
+static int CountNodes(const ModelNodeData& node)
+{
+    int n = 1;
+    for (const ModelNodeData& child : node.children) n += CountNodes(child);
+    return n;
+}
+
+uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& extraTextureDir, const ModelImportOptions* forced)
 {
     const std::string rel = RelativeToAssets(asset);
     const std::string fileName = ToUtf8(asset.filename());
@@ -300,8 +340,10 @@ uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& ext
             meshNames.push_back(m.value("name", std::string()));
         }
 
+    // Las opciones de importado salen del .meta: con Library borrada, el .model se rehace igual.
+    const ModelImportOptions options = forced ? *forced : ModelOptionsFromMeta(meta);
     const int64_t stamp = FileStamp(asset);
-    bool upToDate = MetaUid(meta) != 0 && meta.value("timestamp", int64_t(0)) == stamp &&
+    bool upToDate = !forced && MetaUid(meta) != 0 && meta.value("timestamp", int64_t(0)) == stamp &&
         meta.value("format", uint32_t(0)) == MODEL_FORMAT_VERSION &&   // un .model antiguo se rehace
         fs::exists(LibraryFile(ResourceType::Model, modelUid));
     for (uint64_t uid : meshUids)
@@ -309,7 +351,7 @@ uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& ext
 
     if (!upToDate)
     {
-        Model model = ::LoadModel(ToUtf8(asset));
+        Model model = ::LoadModel(ToUtf8(asset), options);
         if (model.meshes.empty())
         {
             Console::LogError("No se pudo importar el modelo %s", rel.c_str());
@@ -351,16 +393,14 @@ uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& ext
             textureUids[i] = cached->second;
         }
 
-        // BakerHouse.fbx es inconsistente: sus vertices ya vienen con Y arriba, pero su nodo lleva
-        // ademas una rotacion de -90 en X (pensada para modelos con Z arriba). Con esa rotacion la
-        // casa queda tumbada; +90 en X en la raiz la deja derecha. No hay regla general que
-        // distinga este caso, asi que se corrige por nombre.
+        // La raiz del .model lleva el nombre del archivo, la escala (de unidades por la global) y el giro
+        // de los ejes, por encima del nodo raiz: mover o escalar esa raiz afecta al modelo entero.
+        // (La Baker House necesita +90 en X: sus vertices ya vienen con Y arriba pero su nodo los gira
+        // -90. Antes se corregia por nombre; ahora lo dice su .meta, con axis "custom".)
         Transform fix;
-        fix.scale = glm::vec3(model.unitScale);
-        if (Lower(ToUtf8(asset.stem())) == "bakerhouse") fix.rotation.x = 90.0f;
+        fix.scale = glm::vec3(model.unitScale * options.globalScale);
+        fix.rotation = options.AxisRotation();
 
-        // La raiz del .model lleva el nombre del archivo y la escala de unidades (y el giro de la
-        // Baker House) por encima del nodo raiz: mover o escalar esa raiz afecta al modelo entero.
         ModelNodeData root;
         ConvertNode(model.root, meshUids, textureUids, model.meshes, root);
         root.name = ToUtf8(asset.stem());
@@ -370,7 +410,9 @@ uint64_t ResourceManager::ImportModel(const fs::path& asset, const fs::path& ext
         json metaMeshes = json::array();
         for (size_t i = 0; i < meshUids.size(); ++i)
             metaMeshes.push_back({ { "uid", meshUids[i] }, { "name", meshNames[i] } });
-        meta = { { "uid", modelUid }, { "type", "model" }, { "format", MODEL_FORMAT_VERSION }, { "timestamp", stamp }, { "meshes", metaMeshes } };
+        meta = { { "uid", modelUid }, { "type", "model" }, { "format", MODEL_FORMAT_VERSION }, { "timestamp", stamp },
+            { "import", ModelOptionsToJson(options) }, { "meshes", metaMeshes },
+            { "info", { { "nodes", CountNodes(root) }, { "cameras", model.cameraCount }, { "lights", model.lightCount } } } };
         WriteMeta(asset, meta);
         Console::LogInfo("Importado modelo %s -> Library/Models/%llu.model (%zu mallas)", rel.c_str(),
             (unsigned long long)modelUid, meshUids.size());
@@ -482,6 +524,32 @@ bool ResourceManager::ApplyTextureImportOptions(const std::string& assetPath, co
     if (ImportTexture(assetsDir / FromUtf8(assetPath), &options) != uid) return false;
     ReloadTexture(uid);
     return true;
+}
+
+ModelImportOptions ResourceManager::GetModelImportOptions(const std::string& assetPath) const
+{
+    return ModelOptionsFromMeta(ReadMeta(assetsDir / FromUtf8(assetPath)));
+}
+
+bool ResourceManager::ApplyModelImportOptions(const std::string& assetPath, const ModelImportOptions& options)
+{
+    const uint64_t uid = FindByAssetPath(assetPath);
+    const Entry* e = uid ? Find(uid) : nullptr;
+    if (!e || e->type != ResourceType::Model) return false;
+    return ImportModel(assetsDir / FromUtf8(assetPath), {}, &options) == uid;
+}
+
+ResourceManager::ModelInfo ResourceManager::GetModelInfo(const std::string& assetPath) const
+{
+    const json meta = ReadMeta(assetsDir / FromUtf8(assetPath));
+    ModelInfo info;
+    if (const auto it = meta.find("info"); it != meta.end() && it->is_object())
+    {
+        info.nodes = it->value("nodes", 0);
+        info.cameras = it->value("cameras", 0);
+        info.lights = it->value("lights", 0);
+    }
+    return info;
 }
 
 bool ResourceManager::LoadModel(uint64_t uid, ModelNodeData& out) const

@@ -119,6 +119,14 @@ static void SetMeshOn(GameObject& go, const ModelMeshRef& ref, ResourceManager& 
 static void BuildNode(Scene& scene, const ModelNodeData& node, GameObject& go, ResourceManager& resources)
 {
     go.transform.SetFromMatrix(node.transform);
+    if (node.kind == NodeKind::Camera)
+    {
+        // Camara del FBX (Import Settings sin "Ignore cameras"): una camara de juego con sus datos.
+        ComponentCamera& cam = go.components.Add<ComponentCamera>();
+        cam.fovDeg = node.cameraFovDeg;
+        cam.nearPlane = node.cameraNear;
+        cam.farPlane = node.cameraFar;
+    }
     if (node.meshes.size() == 1)
         SetMeshOn(go, node.meshes[0], resources);
     else

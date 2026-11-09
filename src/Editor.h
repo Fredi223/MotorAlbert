@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 
 #include "Camera.h"
+#include "ModuleModelLoader.h"   // ModelImportOptions
 #include "Renderer.h"   // RenderStats
 #include "TextureLoader.h"   // TextureImportOptions
 
@@ -99,6 +100,7 @@ private:
     // Inspector de un asset seleccionado en el explorador: datos, vista previa e Import Settings (con
     // Apply, que reimporta, y Revert). En PanelInspector.cpp.
     void DrawAssetInspector();
+    void DrawModelAssetInspector(uint64_t modelUid);
     void DrawConfiguration();
     void DrawResources();
     void DrawAssets();
@@ -220,6 +222,7 @@ private:
     GameObject* lastInspectedObject = nullptr;
     std::string importEditFor;   // asset cuyas opciones se estan editando (si cambia, se vuelven a leer)
     TextureImportOptions textureImportEdit, textureImportSaved;
+    ModelImportOptions modelImportEdit, modelImportSaved;
     std::shared_ptr<Texture> assetPreview;   // la textura del asset inspeccionado (una referencia)
     // Miniaturas de las texturas de la carpeta actual. Retienen la textura (una referencia), asi que se
     // vacian al cambiar de carpeta, al refrescar y al borrar.

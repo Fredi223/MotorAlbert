@@ -338,11 +338,7 @@ void Editor::DrawAssetInspector()
 
     if (entry->type == ResourceType::Model)
     {
-        int meshCount = 0;
-        for (const auto& [meshUid, e] : resources.Entries())
-            if (e.type == ResourceType::Mesh && e.assetPath == selectedAsset) ++meshCount;
-        ImGui::Text("Modelo (FBX): %d mallas", meshCount);
-        ImGui::TextDisabled("Clic derecho > Show meshes en Assets para verlas");
+        DrawModelAssetInspector(uid);
         return;
     }
 
@@ -407,5 +403,82 @@ void Editor::DrawAssetInspector()
     {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Cambios sin aplicar");
+    }
+}
+
+void Editor::DrawModelAssetInspector(uint64_t modelUid)
+{
+    if (importEditFor != selectedAsset)
+    {
+        importEditFor = selectedAsset;
+        modelImportSaved = modelImportEdit = resources.GetModelImportOptions(selectedAsset);
+        assetPreview.reset();
+    }
+
+    // Lo que trae el archivo, y sus mallas con sus UIDs.
+    const ResourceManager::ModelInfo info = resources.GetModelInfo(selectedAsset);
+    std::vector<const ResourceManager::Entry*> meshes;
+    for (const auto& [meshUid, e] : resources.Entries())
+        if (e.type == ResourceType::Mesh && e.assetPath == selectedAsset) meshes.push_back(&e);
+    ImGui::Text("Modelo (FBX): %zu mallas, %d nodos", meshes.size(), info.nodes);
+    ImGui::Text("En el archivo: %d camaras, %d luces", info.cameras, info.lights);
+    if (ImGui::TreeNode("meshes", "Mallas (%zu)", meshes.size()))
+    {
+        for (const ResourceManager::Entry* e : meshes)
+        {
+            const std::string meshName = e->name.substr(std::min(e->name.size(), selectedAsset.size() + 1));
+            ImGui::BulletText("%s", meshName.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("UID %llu", (unsigned long long)e->uid);
+        }
+        ImGui::TreePop();
+    }
+
+    if (!ImGui::CollapsingHeader("Import Settings", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+    ModelImportOptions& o = modelImportEdit;
+    if (ImGui::DragFloat("Global scale", &o.globalScale, 0.01f, 0.001f, 1000.0f, "%.3f", ImGuiSliderFlags_AlwaysClamp))
+        o.globalScale = std::max(0.001f, o.globalScale);
+    static constexpr const char* axes[] = { "Y up (sin giro)", "Z up (-90 en X)", "Custom" };
+    EnumCombo("Axis", o.axis, axes);
+    if (o.axis == ModelImportOptions::Axis::Custom)
+        ImGui::DragFloat3("Rotation (deg)", glm::value_ptr(o.customRotation), 0.5f);
+    ImGui::Checkbox("Ignore cameras", &o.ignoreCameras);
+    ImGui::SameLine();
+    ImGui::Checkbox("Ignore lights", &o.ignoreLights);
+    ImGui::TextDisabled("Sin ignorar: una camara es un GameObject con Camera (su FOV,\n"
+        "near y far) y una luz un GameObject vacio (el motor no tiene luces).");
+    ImGui::TextDisabled("Se guardan en el .meta. Apply reimporta el .model (las mallas no\n"
+        "cambian). Los objetos ya instanciados no cambian: solo los nuevos.");
+
+    const bool dirty = !(o == modelImportSaved);
+    ImGui::BeginDisabled(!dirty);
+    if (ImGui::Button("Apply"))
+    {
+        if (resources.ApplyModelImportOptions(selectedAsset, o))
+        {
+            modelImportSaved = o;
+            Console::LogInfo("Import Settings aplicadas: %s (vuelve a instanciarlo para verlas)", selectedAsset.c_str());
+        }
+        else
+            Console::LogError("No se pudieron aplicar las Import Settings de %s", selectedAsset.c_str());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Revert")) o = modelImportSaved;
+    ImGui::EndDisabled();
+    if (dirty)
+    {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Cambios sin aplicar");
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button("Instantiate", ImVec2(-FLT_MIN, 0)))
+    {
+        if (GameObject* model = scene.InstantiateModel(modelUid, resources))
+        {
+            selectedObject = model;   // el Inspector pasa al objeto nuevo
+            revealSelection = true;
+        }
     }
 }

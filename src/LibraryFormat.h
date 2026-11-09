@@ -13,13 +13,14 @@
 //
 //   Library/Meshes/<uid>.mesh    "AMSH", version, nombre, vertices (11 floats cada uno), indices
 //   Library/Textures/<uid>.tex   "ATEX", version, formato, ancho, alto, filtro, wrap S y T, niveles (tamano + bytes)
-//   Library/Models/<uid>.model   "AMDL", version, arbol de nodos (nombre, transform, mallas, hijos)
+//   Library/Models/<uid>.model   "AMDL", version, arbol de nodos (nombre, transform, tipo [+ camara], mallas, hijos)
 //
 // Todas las rutas son UTF-8.
 
-// Version de los .model. La 2 anade el color del material a cada malla. El .meta del modelo la
-// guarda ("format") para reimportar los .model de una version anterior.
-constexpr uint32_t MODEL_FORMAT_VERSION = 2;
+// Version de los .model. La 2 anade el color del material a cada malla y la 3 el tipo de nodo (camara
+// o luz, con los datos de la camara). El .meta del modelo la guarda ("format") para reimportar los
+// .model de una version anterior.
+constexpr uint32_t MODEL_FORMAT_VERSION = 3;
 
 // Version de los .tex. La 2 anade el sampler (filtro y wrap, opciones de importado). El .meta de la
 // textura tambien la guarda ("format") para reimportar los .tex v1 con el mismo UID.
@@ -42,6 +43,8 @@ struct ModelNodeData
     glm::mat4 transform{ 1.0f };
     std::vector<ModelMeshRef> meshes;
     std::vector<ModelNodeData> children;
+    NodeKind kind = NodeKind::Node;
+    float cameraFovDeg = 60.0f, cameraNear = 0.1f, cameraFar = 100.0f;   // si kind == Camera
 };
 
 bool SaveMeshFile(const std::string& path, const Mesh& mesh);

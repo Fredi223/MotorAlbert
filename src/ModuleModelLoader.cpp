@@ -5,6 +5,7 @@
 #include <assimp/postprocess.h>
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 #include <glm/glm.hpp>
 
 #include "Geometry.h"
@@ -253,24 +254,70 @@ static void ProcessAIMesh(
 }
 
 
-// Copia la rama de nodos de Assimp. Los nodos sin ninguna malla en toda su rama (camaras, luces,
-// ayudantes del exportador) se descartan: no aportan nada a la escena. Devuelve false si se descarta.
-static bool ProcessNode(const aiNode* aiNode, ModelNode& out)
+// Que camaras y luces del archivo se conservan al copiar los nodos.
+struct NodeContext
+{
+    const aiScene* scene;
+    bool keepCameras;
+    bool keepLights;
+};
+
+// Assimp enlaza camaras y luces con su nodo por el nombre.
+static const aiCamera* FindCamera(const aiScene* scene, const aiString& name)
+{
+    for (unsigned int i = 0; i < scene->mNumCameras; ++i)
+        if (scene->mCameras[i]->mName == name) return scene->mCameras[i];
+    return nullptr;
+}
+
+static bool IsLight(const aiScene* scene, const aiString& name)
+{
+    for (unsigned int i = 0; i < scene->mNumLights; ++i)
+        if (scene->mLights[i]->mName == name) return true;
+    return false;
+}
+
+// Copia la rama de nodos de Assimp. Los nodos sin ninguna malla en toda su rama (ayudantes del
+// exportador, y las camaras y luces si se ignoran) se descartan: no aportan nada a la escena.
+// Devuelve false si se descarta.
+static bool ProcessNode(const aiNode* aiNode, const NodeContext& ctx, ModelNode& out)
 {
     out.name = aiNode->mName.C_Str();
     out.transform = AiToGlm(aiNode->mTransformation);
     out.meshIndices.assign(aiNode->mMeshes, aiNode->mMeshes + aiNode->mNumMeshes);
 
+    const aiCamera* cam = ctx.keepCameras ? FindCamera(ctx.scene, aiNode->mName) : nullptr;
+    if (cam)
+    {
+        out.kind = NodeKind::Camera;
+        // La orientacion es la del nodo tal cual: el FBX ya la trae con la convencion del motor (mira
+        // hacia -Z del nodo, con Y arriba). Assimp da mLookAt = +X, pero no corresponde: en Street
+        // el -Z del nodo apunta justo a "Camera001.Target" y +X le queda perpendicular (comprobado con
+        // una sonda), asi que usar mLookAt la dejaba mirando de lado.
+        // mHorizontalFOV es la mitad del angulo horizontal, en radianes; el motor usa el vertical entero.
+        const float aspect = cam->mAspect > 0.0f ? cam->mAspect : 16.0f / 9.0f;
+        out.cameraFovDeg = glm::clamp(glm::degrees(2.0f * std::atan(std::tan(cam->mHorizontalFOV) / aspect)), 1.0f, 179.0f);
+        out.cameraNear = cam->mClipPlaneNear;
+        out.cameraFar = cam->mClipPlaneFar;
+        Console::LogInfo("Assimp: camara '%s' (FOV vertical %.1f, near %.3f, far %.1f)",
+            out.name.c_str(), out.cameraFovDeg, out.cameraNear, out.cameraFar);
+    }
+    else if (ctx.keepLights && IsLight(ctx.scene, aiNode->mName))
+    {
+        out.kind = NodeKind::Light;   // el motor no tiene luces: queda como un GameObject vacio con su nombre
+        Console::LogInfo("Assimp: luz '%s' (se importa como GameObject vacio)", out.name.c_str());
+    }
+
     for (unsigned int i = 0; i < aiNode->mNumChildren; ++i)
     {
         ModelNode child;
-        if (ProcessNode(aiNode->mChildren[i], child))
+        if (ProcessNode(aiNode->mChildren[i], ctx, child))
             out.children.push_back(std::move(child));
     }
-    return !out.meshIndices.empty() || !out.children.empty();
+    return !out.meshIndices.empty() || !out.children.empty() || out.kind != NodeKind::Node;
 }
 
-Model LoadModel(const std::string& path)
+Model LoadModel(const std::string& path, const ModelImportOptions& options)
 {
     Model model;
     Assimp::Importer importer;
@@ -319,12 +366,15 @@ Model LoadModel(const std::string& path)
         return model;
     }
 
-    Console::LogInfo("Assimp: %u mallas, %u materiales", scene->mNumMeshes, scene->mNumMaterials);
+    Console::LogInfo("Assimp: %u mallas, %u materiales, %u camaras, %u luces", scene->mNumMeshes, scene->mNumMaterials,
+        scene->mNumCameras, scene->mNumLights);
     model.meshes.reserve(scene->mNumMeshes);
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         ProcessAIMesh(scene->mMeshes[i], scene, model.meshes);
     }
-    ProcessNode(scene->mRootNode, model.root);
+    model.cameraCount = scene->mNumCameras;
+    model.lightCount = scene->mNumLights;
+    ProcessNode(scene->mRootNode, { scene, !options.ignoreCameras, !options.ignoreLights }, model.root);
     return model;
 }
 
