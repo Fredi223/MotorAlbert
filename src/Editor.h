@@ -1,5 +1,7 @@
 #pragma once
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 #include <SDL3/SDL.h>
@@ -16,6 +18,7 @@ class Scene;
 class Simulation;
 class UndoHistory;
 struct GameObject;
+struct Texture;
 
 // Editor del motor: la interfaz de ImGui (menu, paneles, viewport), la camara del editor, la
 // seleccion y el input. Usa el motor (Scene, Renderer, FrameTiming) pero el motor no sabe nada de el.
@@ -27,7 +30,7 @@ struct GameObject;
 //   PanelInspector.cpp     Inspector
 //   PanelConfiguration.cpp Configuration
 //   PanelResources.cpp     Resources (recursos importados y sus referencias)
-//   PanelAssets.cpp        Assets (arbol de la carpeta Assets/, importar y borrar)
+//   PanelAssets.cpp        Assets (explorador de la carpeta Assets/: navegar, importar y borrar)
 //   PanelHierarchy.cpp     Hierarchy y popup de renombrar
 //   PanelViewport.cpp      Viewport y picking
 class Editor
@@ -99,9 +102,21 @@ private:
 
     // --- PanelAssets.cpp ---
     void RebuildAssetTree();
-    void DrawAssetNode(const AssetNode& node);
-    // Borra el asset y quita sus recursos de los GameObjects que los usan. Vacia el historial de undo:
-    // borrar un archivo no se puede deshacer, y un snapshot podria devolver un recurso que ya no existe.
+    const AssetNode* FindAssetNode(const std::string& assetPath) const;   // nullptr si no esta en el arbol
+    // Carpeta donde se importa lo que se suelta en la ventana (la actual, o la del FBX que se esta viendo).
+    std::string CurrentAssetDirectory() const;
+    void DrawAssetToolbar();
+    void DrawFolderTree(const AssetNode& node);
+    void DrawAssetGrid();
+    // Una casilla de la rejilla: icono (o miniatura) con el nombre debajo. Devuelve si se ha pulsado.
+    bool DrawAssetTile(const char* id, const std::string& label, int icon, uint64_t textureUid, bool selected);
+    void DrawAssetContextMenu(const AssetNode& node);
+    void ActivateAsset(const AssetNode& node);   // doble clic
+    void RequestDeleteAsset(const AssetNode& node);
+    void DrawAssetPopups();
+    // Borra el asset (o la carpeta con todo lo que contiene) y quita sus recursos de los GameObjects que
+    // los usan. Vacia el historial de undo: borrar un archivo no se puede deshacer, y un snapshot podria
+    // devolver un recurso que ya no existe.
     void DeleteAsset(const std::string& assetPath);
     void DrawHierarchy();
     void DrawViewport();
@@ -190,11 +205,22 @@ private:
     // Resources
     bool onlyLoadedResources = false;
 
-    // Assets
+    // Assets (explorador). Las rutas son relativas a Assets/, con '/' y "" para la raiz.
     AssetNode assetTree;
     bool assetTreeDirty = true;
-    std::string assetToDelete;   // pendiente de confirmar en el popup
+    std::string currentFolder;    // carpeta que se ve en la rejilla, o un .fbx (se ven sus mallas)
+    std::string folderToOpen;     // se aplica al terminar el panel (no en mitad del recorrido)
+    bool changeFolder = false;
+    bool revealFolder = true;     // el arbol despliega los padres de currentFolder
+    std::string selectedAsset;
+    // Miniaturas de las texturas de la carpeta actual. Retienen la textura (una referencia), asi que se
+    // vacian al cambiar de carpeta, al refrescar y al borrar.
+    std::map<uint64_t, std::shared_ptr<Texture>> thumbnails;
+    std::string assetToDelete;    // pendiente de confirmar en el popup
+    int assetToDeleteFiles = 0, assetToDeleteImported = 0;   // si es una carpeta
     bool openDeleteAssetPopup = false;
+    bool openNewFolderPopup = false;
+    char newFolderBuf[128] = { 0 };
 
     // Escena abierta (relativa a Assets/, p. ej. "Scenes/Street.scene"); vacia = sin guardar todavia
     std::string currentScene;

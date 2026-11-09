@@ -54,10 +54,10 @@ public:
     // el UID de su recurso principal: la textura o el modelo. 0 si no es un formato soportado o falla.
     uint64_t ImportAsset(const std::string& absolutePath);
 
-    // Copia un archivo de fuera a la raiz de Assets/ y lo importa (drag & drop). Si es un FBX, copia
-    // tambien las texturas que encuentre junto al original. Si ya hay un archivo con ese nombre en
-    // Assets/, se usa ese. Devuelve como ImportAsset.
-    uint64_t ImportExternalFile(const std::string& absolutePath);
+    // Copia un archivo de fuera a la carpeta targetFolder de Assets/ (relativa, "" = la raiz) y lo importa
+    // (drag & drop). Si es un FBX, copia tambien las texturas que encuentre junto al original. Si ya hay
+    // un archivo con ese nombre en esa carpeta, se usa ese. Devuelve como ImportAsset.
+    uint64_t ImportExternalFile(const std::string& absolutePath, const std::string& targetFolder = {});
 
     // Borra un asset: el archivo, su .meta y sus recursos de Library (un FBX: el modelo y sus mallas).
     // Devuelve los UIDs quitados del registro: quien llama debe soltar las referencias que tenga a ellos.

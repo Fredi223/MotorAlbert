@@ -341,7 +341,7 @@ void Editor::DrawDockspace()
     ImGui::End();
 }
 
-// Un archivo soltado en la ventana se copia a Assets/ (si viene de fuera) y se importa a Library.
+// Un archivo soltado en la ventana se copia a Assets/ (a la carpeta abierta en el explorador, si viene de fuera) y se importa a Library.
 // Un FBX se instancia en la escena; una textura se aplica al objeto seleccionado.
 void Editor::ImportDroppedFile(const std::string& filePath)
 {
@@ -354,7 +354,8 @@ void Editor::ImportDroppedFile(const std::string& filePath)
         return;
     }
 
-    const uint64_t uid = resources.ImportExternalFile(filePath);
+    // Con el explorador abierto, va a la carpeta que se esta viendo; si no, a la raiz de Assets/.
+    const uint64_t uid = resources.ImportExternalFile(filePath, showAssets ? CurrentAssetDirectory() : std::string());
     assetTreeDirty = true;   // puede haber archivos nuevos en Assets/
     if (uid == 0) return;
     if (type == ResourceType::Texture)

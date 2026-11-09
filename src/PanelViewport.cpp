@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 #include "imgui.h"
 #include "Geometry.h"
 #include "Logger.h"
 #include "Renderer.h"
+#include "ResourceManager.h"
 #include "Scene.h"
 
 void Editor::DrawViewport()
@@ -69,6 +71,26 @@ void Editor::DrawViewport()
     }
 
     ImGui::Image((ImTextureID)(intptr_t)renderer.GetViewportTexture(), size, ImVec2(0, 1), ImVec2(1, 0));
+
+    // Un recurso arrastrado desde Assets: un modelo se instancia y una textura se aplica a la seleccion.
+    if (ImGui::BeginDragDropTarget())
+    {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(DND_RESOURCE))
+        {
+            uint64_t uid = 0;
+            std::memcpy(&uid, payload->Data, sizeof(uid));
+            const ResourceManager::Entry* e = resources.Find(uid);
+            if (e && e->type == ResourceType::Model)
+            {
+                if (GameObject* model = scene.InstantiateModel(uid, resources)) selectedObject = model;
+            }
+            else if (e && e->type == ResourceType::Texture)
+                AssignDroppedTexture(uid);
+            else
+                Console::LogInfo("Las mallas se asignan desde el campo Mesh del Inspector");
+        }
+        ImGui::EndDragDropTarget();
+    }
     ImGui::End(); // cierra Viewport
 }
 

@@ -170,7 +170,7 @@ uint64_t ResourceManager::ImportAsset(const std::string& absolutePath)
     return type == ResourceType::Texture ? ImportTexture(path) : ImportModel(path, {});
 }
 
-uint64_t ResourceManager::ImportExternalFile(const std::string& absolutePath)
+uint64_t ResourceManager::ImportExternalFile(const std::string& absolutePath, const std::string& targetFolder)
 {
     const fs::path source = FromUtf8(absolutePath);
     if (!RelativeToAssets(source).empty())
@@ -184,17 +184,20 @@ uint64_t ResourceManager::ImportExternalFile(const std::string& absolutePath)
         return 0;
     }
 
-    const fs::path target = assetsDir / source.filename();
     std::error_code ec;
+    const fs::path folder = assetsDir / FromUtf8(targetFolder);
+    fs::create_directories(folder, ec);
+    const fs::path target = folder / source.filename();
+    const std::string targetRel = RelativeToAssets(target);
     if (fs::exists(target))
-        Console::LogInfo("Ya hay un %s en Assets/: se usa ese", ToUtf8(source.filename()).c_str());
+        Console::LogInfo("Ya hay un Assets/%s: se usa ese", targetRel.c_str());
     else if (!fs::copy_file(source, target, ec))
     {
-        Console::LogError("No se pudo copiar %s a Assets/ (%s)", absolutePath.c_str(), ec.message().c_str());
+        Console::LogError("No se pudo copiar %s a Assets/%s (%s)", absolutePath.c_str(), targetFolder.c_str(), ec.message().c_str());
         return 0;
     }
     else
-        Console::LogInfo("Copiado a Assets/: %s", ToUtf8(source.filename()).c_str());
+        Console::LogInfo("Copiado a Assets/%s", targetRel.c_str());
 
     return type == ResourceType::Texture ? ImportTexture(target) : ImportModel(target, source.parent_path());
 }
