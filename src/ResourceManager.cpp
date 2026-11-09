@@ -61,6 +61,41 @@ namespace
         const auto it = meta.find("uid");
         return (it != meta.end() && it->is_number_unsigned()) ? it->get<uint64_t>() : 0;
     }
+
+    // Opciones de importado de las texturas en el .meta ("import"), con los enums como texto para que
+    // el .meta se pueda leer y editar a mano. Lo que falte o no se reconozca toma el valor por defecto.
+    constexpr const char* FILTER_NAMES[] = { "linear_mipmaps", "linear", "nearest" };
+    constexpr const char* WRAP_NAMES[] = { "repeat", "clamp", "mirrored" };
+
+    template <class E, size_t N>
+    E EnumFromJson(const json& j, const char* key, const char* const (&names)[N], E fallback)
+    {
+        const auto it = j.find(key);
+        if (it == j.end() || !it->is_string()) return fallback;
+        for (size_t i = 0; i < N; ++i)
+            if (it->get<std::string>() == names[i]) return E(i);
+        return fallback;
+    }
+
+    json TextureOptionsToJson(const TextureImportOptions& o)
+    {
+        return { { "filter", FILTER_NAMES[size_t(o.sampler.filter)] }, { "wrapS", WRAP_NAMES[size_t(o.sampler.wrapS)] },
+            { "wrapT", WRAP_NAMES[size_t(o.sampler.wrapT)] }, { "flipX", o.flipX }, { "flipY", o.flipY } };
+    }
+
+    TextureImportOptions TextureOptionsFromMeta(const json& meta)
+    {
+        TextureImportOptions o;
+        const auto it = meta.find("import");
+        if (it == meta.end() || !it->is_object()) return o;
+        const json& j = *it;
+        o.sampler.filter = EnumFromJson(j, "filter", FILTER_NAMES, o.sampler.filter);
+        o.sampler.wrapS = EnumFromJson(j, "wrapS", WRAP_NAMES, o.sampler.wrapS);
+        o.sampler.wrapT = EnumFromJson(j, "wrapT", WRAP_NAMES, o.sampler.wrapT);
+        o.flipX = j.value("flipX", false);
+        o.flipY = j.value("flipY", false);
+        return o;
+    }
 }
 
 ResourceType ResourceManager::TypeOfExtension(const std::string& path, bool& supported)
@@ -202,25 +237,30 @@ uint64_t ResourceManager::ImportExternalFile(const std::string& absolutePath, co
     return type == ResourceType::Texture ? ImportTexture(target) : ImportModel(target, source.parent_path());
 }
 
-uint64_t ResourceManager::ImportTexture(const fs::path& asset)
+uint64_t ResourceManager::ImportTexture(const fs::path& asset, const TextureImportOptions* forced)
 {
     const std::string rel = RelativeToAssets(asset);
     json meta = ReadMeta(asset);
     uint64_t uid = MetaUid(meta);
     if (uid == 0) uid = GenerateUID();
 
+    // Las opciones de importado salen del .meta: con Library borrada, el .tex se rehace igual.
+    const TextureImportOptions options = forced ? *forced : TextureOptionsFromMeta(meta);
     const fs::path lib = LibraryFile(ResourceType::Texture, uid);
     const int64_t stamp = FileStamp(asset);
-    const bool upToDate = MetaUid(meta) != 0 && meta.value("timestamp", int64_t(0)) == stamp && fs::exists(lib);
+    const bool upToDate = !forced && MetaUid(meta) != 0 && meta.value("timestamp", int64_t(0)) == stamp &&
+        meta.value("format", uint32_t(0)) == TEX_FORMAT_VERSION &&   // un .tex antiguo se rehace
+        fs::exists(lib);
     if (!upToDate)
     {
         TextureData data;
-        if (!DecodeImageFile(ToUtf8(asset), data) || !SaveTextureFile(ToUtf8(lib), data))
+        if (!DecodeImageFile(ToUtf8(asset), data, options) || !SaveTextureFile(ToUtf8(lib), data))
         {
             Console::LogError("No se pudo importar la textura %s", rel.c_str());
             return 0;
         }
-        meta = { { "uid", uid }, { "type", "texture" }, { "timestamp", stamp } };
+        meta = { { "uid", uid }, { "type", "texture" }, { "format", TEX_FORMAT_VERSION }, { "timestamp", stamp },
+            { "import", TextureOptionsToJson(options) } };
         WriteMeta(asset, meta);
         Console::LogInfo("Importada textura %s -> Library/Textures/%llu.tex", rel.c_str(), (unsigned long long)uid);
     }
@@ -404,6 +444,44 @@ TexturePtr ResourceManager::GetTexture(uint64_t uid)
     e.texture = ptr;
     Console::LogInfo("Recurso cargado desde Library: textura %s (%ux%u)", e.name.c_str(), data.width, data.height);
     return ptr;
+}
+
+void ResourceManager::ReloadTexture(uint64_t uid)
+{
+    const auto it = entries.find(uid);
+    if (it == entries.end()) return;
+    const TexturePtr loaded = it->second.texture.lock();
+    if (!loaded) return;   // no esta cargada: la proxima vez que se pida ya sale del .tex nuevo
+
+    TextureData data;
+    if (!LoadTextureFile(it->second.libraryPath, data))
+    {
+        Console::LogError("No se pudo recargar la textura %s", it->second.name.c_str());
+        return;
+    }
+    // El mismo Texture (los shared_ptr que lo comparten no cambian), con su textura de GL nueva.
+    const GLuint old = loaded->id;
+    loaded->id = UploadTexture(data);
+    loaded->width = data.width;
+    loaded->height = data.height;
+    loaded->format = data.format;
+    glDeleteTextures(1, &old);
+    Console::LogInfo("Textura recargada en el sitio: %s (%ld referencias)", it->second.name.c_str(), loaded.use_count() - 1);
+}
+
+TextureImportOptions ResourceManager::GetTextureImportOptions(const std::string& assetPath) const
+{
+    return TextureOptionsFromMeta(ReadMeta(assetsDir / FromUtf8(assetPath)));
+}
+
+bool ResourceManager::ApplyTextureImportOptions(const std::string& assetPath, const TextureImportOptions& options)
+{
+    const uint64_t uid = FindByAssetPath(assetPath);
+    const Entry* e = uid ? Find(uid) : nullptr;
+    if (!e || e->type != ResourceType::Texture) return false;
+    if (ImportTexture(assetsDir / FromUtf8(assetPath), &options) != uid) return false;
+    ReloadTexture(uid);
+    return true;
 }
 
 bool ResourceManager::LoadModel(uint64_t uid, ModelNodeData& out) const

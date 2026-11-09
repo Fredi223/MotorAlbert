@@ -46,12 +46,14 @@ void Editor::DrawHierarchyNode(GameObject& go, HierarchyOps& ops)
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen())
     {
         selectedObject = &go;
+        inspectAsset = false;   // el Inspector vuelve al objeto aunque ya estuviera seleccionado
         if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) BeginRename(go);
     }
 
     if (ImGui::BeginPopupContextItem())
     {
         selectedObject = &go;
+        inspectAsset = false;
         if (ImGui::MenuItem("Rename")) BeginRename(go);
         if (ImGui::MenuItem("Create Empty Child")) ops.createChildOf = &go;
         if (ImGui::MenuItem("Duplicate", "Ctrl+D")) ops.toDuplicate = &go;

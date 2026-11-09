@@ -184,6 +184,22 @@ void Editor::DrawInspector()
     if (!showInspector) return;
     ImGui::Begin("Inspector");
 
+    // Un objeto recien seleccionado (creado, instanciado, undo...) quita el asset del Inspector.
+    if (selectedObject != lastInspectedObject)
+    {
+        lastInspectedObject = selectedObject;
+        if (selectedObject) inspectAsset = false;
+    }
+    if (inspectAsset && !selectedAsset.empty())
+    {
+        DrawAssetInspector();
+        ImGui::End();
+        return;
+    }
+    // Sin asset en el Inspector: se sueltan su vista previa y sus opciones sin aplicar.
+    assetPreview.reset();
+    importEditFor.clear();
+
     if (!selectedObject)
     {
         ImGui::Text("No hay ningun objeto seleccionado");
@@ -270,4 +286,126 @@ void Editor::DrawInspector()
     }
 
     ImGui::End();
+}
+
+// --- Inspector de un asset (seleccionado en el panel Assets) ---
+
+static const char* TextureFormatName(TextureData::Format f)
+{
+    switch (f)
+    {
+    case TextureData::Format::DXT1: return "DXT1 (DDS)";
+    case TextureData::Format::DXT3: return "DXT3 (DDS)";
+    case TextureData::Format::DXT5: return "DXT5 (DDS)";
+    default:                        return "RGBA8";
+    }
+}
+
+// Combo para un enum con valores 0..N-1.
+template <class E, size_t N>
+static void EnumCombo(const char* label, E& value, const char* const (&names)[N])
+{
+    int v = int(value);
+    if (ImGui::Combo(label, &v, names, int(N))) value = E(v);
+}
+
+void Editor::DrawAssetInspector()
+{
+    const AssetNode* node = FindAssetNode(selectedAsset);
+    if (!node)
+    {
+        ImGui::TextDisabled("El asset ya no existe");
+        return;
+    }
+    const uint64_t uid = resources.FindByAssetPath(selectedAsset);
+    const ResourceManager::Entry* entry = uid ? resources.Find(uid) : nullptr;
+
+    ImGui::Text("%s", node->name.c_str());
+    ImGui::TextDisabled("Assets/%s", selectedAsset.c_str());
+    ImGui::Separator();
+
+    if (node->isDirectory)
+    {
+        ImGui::Text("Carpeta (%zu elementos)", node->children.size());
+        return;
+    }
+    if (!entry)
+    {
+        ImGui::Text(ResourceManager::PathFromUtf8(selectedAsset).extension() == ".scene" ? "Escena (.scene, JSON)" : "No importado (formato no soportado)");
+        return;
+    }
+    ImGui::TextDisabled("UID %llu", (unsigned long long)uid);
+
+    if (entry->type == ResourceType::Model)
+    {
+        int meshCount = 0;
+        for (const auto& [meshUid, e] : resources.Entries())
+            if (e.type == ResourceType::Mesh && e.assetPath == selectedAsset) ++meshCount;
+        ImGui::Text("Modelo (FBX): %d mallas", meshCount);
+        ImGui::TextDisabled("Clic derecho > Show meshes en Assets para verlas");
+        return;
+    }
+
+    // --- Textura ---
+    // Las opciones se leen del .meta al seleccionarla; se editan aqui y solo se aplican con Apply.
+    if (importEditFor != selectedAsset)
+    {
+        importEditFor = selectedAsset;
+        textureImportSaved = textureImportEdit = resources.GetTextureImportOptions(selectedAsset);
+        assetPreview = resources.GetTexture(uid);
+    }
+
+    if (assetPreview)
+    {
+        ImGui::Text("Size: %ux%u | Format: %s", assetPreview->width, assetPreview->height, TextureFormatName(assetPreview->format));
+        ImGui::TextDisabled("refs: %ld (sin contar la vista previa)", entry->RefCount() - 1);
+
+        // Vista previa con su proporcion, al ancho del panel (como mucho 256 px).
+        const float side = std::min(256.0f, ImGui::GetContentRegionAvail().x);
+        const float aspect = float(assetPreview->width) / float(std::max(1u, assetPreview->height));
+        const ImVec2 size = aspect >= 1.0f ? ImVec2(side, side / aspect) : ImVec2(side * aspect, side);
+        ImGui::Image((ImTextureID)(intptr_t)assetPreview->id, size, ImVec2(0, 1), ImVec2(1, 0));
+    }
+    else
+        ImGui::TextDisabled("No se pudo cargar la textura");
+
+    if (!ImGui::CollapsingHeader("Import Settings", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+    static constexpr const char* filters[] = { "Linear + mipmaps", "Linear", "Nearest" };
+    static constexpr const char* wraps[] = { "Repeat", "Clamp to edge", "Mirrored repeat" };
+    TextureImportOptions& o = textureImportEdit;
+    EnumCombo("Filter", o.sampler.filter, filters);
+    EnumCombo("Wrap S", o.sampler.wrapS, wraps);
+    EnumCombo("Wrap T", o.sampler.wrapT, wraps);
+
+    // En los DXT solo se puede voltear en Y (DdsLoader ya invierte las filas de los bloques).
+    const bool compressed = assetPreview && assetPreview->format != TextureData::Format::RGBA8;
+    ImGui::BeginDisabled(compressed);
+    ImGui::Checkbox("Flip X", &o.flipX);
+    ImGui::EndDisabled();
+    if (compressed) ImGui::SetItemTooltip("Los DDS comprimidos (DXT) no se voltean en horizontal");
+    ImGui::SameLine();
+    ImGui::Checkbox("Flip Y", &o.flipY);
+    ImGui::TextDisabled("Se guardan en el .meta. El flip cambia los pixeles: Apply reimporta el .tex.");
+
+    const bool dirty = !(o == textureImportSaved);
+    ImGui::BeginDisabled(!dirty);
+    if (ImGui::Button("Apply"))
+    {
+        if (resources.ApplyTextureImportOptions(selectedAsset, o))
+        {
+            textureImportSaved = o;
+            Console::LogInfo("Import Settings aplicadas: %s", selectedAsset.c_str());
+        }
+        else
+            Console::LogError("No se pudieron aplicar las Import Settings de %s", selectedAsset.c_str());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Revert")) o = textureImportSaved;
+    ImGui::EndDisabled();
+    if (dirty)
+    {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Cambios sin aplicar");
+    }
 }

@@ -92,29 +92,13 @@ void Editor::DrawConfiguration()
 
         // --- Texturas ---
         if (ImGui::CollapsingHeader("Textures")) {
-            const char* filters[] = { "Linear + mipmaps", "Nearest" };
-            const char* wraps[] = { "Repeat", "Clamp to edge", "Mirrored repeat" };
-            const bool filterChanged = ImGui::Combo("Filter", &texFilter, filters, IM_ARRAYSIZE(filters));
-            const bool wrapChanged = ImGui::Combo("Wrap", &texWrap, wraps, IM_ARRAYSIZE(wraps));
-            ImGui::TextDisabled("Se aplica a las texturas ya cargadas");
+            // El filtro y el wrap son opciones de importado de cada textura (Inspector del asset).
+            ImGui::TextDisabled("Filtro, wrap y flip: selecciona la textura en Assets (Import Settings)");
 
             // Las texturas cargadas (con alguna referencia) y la checker.
             std::vector<GLuint> texIds{ renderer.GetCheckerTexture() };
             for (const auto& [uid, entry] : resources.Entries())
                 if (const TexturePtr tex = entry.texture.lock()) texIds.push_back(tex->id);
-
-            if (filterChanged || wrapChanged) {
-                const GLint minF = texFilter == 0 ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
-                const GLint magF = texFilter == 0 ? GL_LINEAR : GL_NEAREST;
-                const GLint wrap = texWrap == 0 ? GL_REPEAT : (texWrap == 1 ? GL_CLAMP_TO_EDGE : GL_MIRRORED_REPEAT);
-                for (GLuint t : texIds) {
-                    glTextureParameteri(t, GL_TEXTURE_MIN_FILTER, minF);
-                    glTextureParameteri(t, GL_TEXTURE_MAG_FILTER, magF);
-                    glTextureParameteri(t, GL_TEXTURE_WRAP_S, wrap);
-                    glTextureParameteri(t, GL_TEXTURE_WRAP_T, wrap);
-                }
-                Console::LogInfo("Texturas: filtro=%s, wrap=%s (%zu texturas)", filters[texFilter], wraps[texWrap], texIds.size());
-            }
 
             // Estimacion de VRAM: RGBA8 (4 B/pixel) + ~1/3 extra de la cadena de mipmaps.
             double texBytes = 0.0;

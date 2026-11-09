@@ -106,7 +106,7 @@ namespace
     }
 }
 
-bool DecodeDDS(const std::vector<uint8_t>& file, const std::string& pathForLog, TextureData& out)
+bool DecodeDDS(const std::vector<uint8_t>& file, const std::string& pathForLog, TextureData& out, bool flipVertically)
 {
     const char* path = pathForLog.c_str();
     size_t cursor = 0;
@@ -167,7 +167,7 @@ bool DecodeDDS(const std::vector<uint8_t>& file, const std::string& pathForLog, 
             const size_t size = size_t(std::max<uint32_t>(1, (w + 3) / 4)) * std::max<uint32_t>(1, (ht + 3) / 4) * blockBytes;
             std::vector<uint8_t> data(size);
             if (!read(data.data(), size)) break;
-            FlipCompressedLevel(data, w, ht, h.pfFourCC);
+            if (flipVertically) FlipCompressedLevel(data, w, ht, h.pfFourCC);
             out.mips.push_back(std::move(data));
         }
         else
@@ -183,7 +183,7 @@ bool DecodeDDS(const std::vector<uint8_t>& file, const std::string& pathForLog, 
                 {
                     uint32_t px = 0;
                     std::memcpy(&px, &src[(size_t(y) * w + x) * bytesPerPixel], bytesPerPixel);
-                    uint8_t* dst = &rgba[(size_t(ht - 1 - y) * w + x) * 4];   // fila volteada
+                    uint8_t* dst = &rgba[(size_t(flipVertically ? ht - 1 - y : y) * w + x) * 4];   // fila volteada
                     dst[0] = ExtractChannel(px, h.pfRMask);
                     dst[1] = ExtractChannel(px, h.pfGMask);
                     dst[2] = ExtractChannel(px, h.pfBMask);

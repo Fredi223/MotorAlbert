@@ -71,6 +71,14 @@ public:
     TexturePtr GetTexture(uint64_t uid);
     bool LoadModel(uint64_t uid, ModelNodeData& out) const;
 
+    // Opciones de importado de una textura (ruta relativa a Assets/): las de su .meta, o las de por
+    // defecto si no tiene.
+    TextureImportOptions GetTextureImportOptions(const std::string& assetPath) const;
+    // Guarda las opciones en el .meta y reimporta la textura. Si esta cargada se actualiza en el sitio:
+    // el mismo Texture recibe el id de GL nuevo, asi que los materiales y los snapshots del undo no
+    // notan nada. false si no es una textura importada o falla.
+    bool ApplyTextureImportOptions(const std::string& assetPath, const TextureImportOptions& options);
+
     const Entry* Find(uint64_t uid) const;
     const std::map<uint64_t, Entry>& Entries() const { return entries; }
     std::string AssetsDir() const;
@@ -85,7 +93,10 @@ public:
     static ResourceType TypeOfExtension(const std::string& path, bool& supported);
 
 private:
-    uint64_t ImportTexture(const std::filesystem::path& asset);
+    // forced: reimporta con esas opciones (Apply en el Inspector) aunque este al dia.
+    uint64_t ImportTexture(const std::filesystem::path& asset, const TextureImportOptions* forced = nullptr);
+    // Si la textura esta cargada, la vuelve a leer de Library en el mismo Texture (nuevo id de GL).
+    void ReloadTexture(uint64_t uid);
     uint64_t ImportModel(const std::filesystem::path& asset, const std::filesystem::path& extraTextureDir);
     std::filesystem::path LibraryFile(ResourceType type, uint64_t uid) const;
     Entry& Register(uint64_t uid, ResourceType type, const std::string& name, const std::string& assetPath);

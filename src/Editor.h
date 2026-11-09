@@ -10,6 +10,7 @@
 
 #include "Camera.h"
 #include "Renderer.h"   // RenderStats
+#include "TextureLoader.h"   // TextureImportOptions
 
 class FrameTiming;
 class Renderer;
@@ -18,7 +19,6 @@ class Scene;
 class Simulation;
 class UndoHistory;
 struct GameObject;
-struct Texture;
 
 // Editor del motor: la interfaz de ImGui (menu, paneles, viewport), la camara del editor, la
 // seleccion y el input. Usa el motor (Scene, Renderer, FrameTiming) pero el motor no sabe nada de el.
@@ -96,6 +96,9 @@ private:
 
     // --- Paneles ---
     void DrawInspector();
+    // Inspector de un asset seleccionado en el explorador: datos, vista previa e Import Settings (con
+    // Apply, que reimporta, y Revert). En PanelInspector.cpp.
+    void DrawAssetInspector();
     void DrawConfiguration();
     void DrawResources();
     void DrawAssets();
@@ -198,8 +201,6 @@ private:
 
     // Configuration
     int winW = 1280, winH = 720;
-    int texFilter = 0;   // 0 = linear + mipmaps, 1 = nearest
-    int texWrap = 0;     // 0 = repeat, 1 = clamp, 2 = mirrored repeat
     std::vector<float> plotBuf;
 
     // Resources
@@ -213,6 +214,13 @@ private:
     bool changeFolder = false;
     bool revealFolder = true;     // el arbol despliega los padres de currentFolder
     std::string selectedAsset;
+    // El Inspector muestra selectedAsset en vez del GameObject. Seleccionar un asset no suelta el
+    // GameObject (el doble clic en una textura se le sigue aplicando); seleccionar un objeto lo quita.
+    bool inspectAsset = false;
+    GameObject* lastInspectedObject = nullptr;
+    std::string importEditFor;   // asset cuyas opciones se estan editando (si cambia, se vuelven a leer)
+    TextureImportOptions textureImportEdit, textureImportSaved;
+    std::shared_ptr<Texture> assetPreview;   // la textura del asset inspeccionado (una referencia)
     // Miniaturas de las texturas de la carpeta actual. Retienen la textura (una referencia), asi que se
     // vacian al cambiar de carpeta, al refrescar y al borrar.
     std::map<uint64_t, std::shared_ptr<Texture>> thumbnails;

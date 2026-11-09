@@ -26,7 +26,8 @@ bool ReadWholeFile(const std::string& utf8Path, std::vector<uint8_t>& out)
     return true;
 }
 
-bool DecodeImageFile(const std::string& utf8Path, TextureData& out)
+// flipVertically: el volteo en Y para OpenGL (origen abajo); el flip Y del usuario lo deshace.
+static bool DecodeRaw(const std::string& utf8Path, TextureData& out, bool flipVertically)
 {
     std::vector<uint8_t> bytes;
     if (!ReadWholeFile(utf8Path, bytes))
@@ -38,11 +39,11 @@ bool DecodeImageFile(const std::string& utf8Path, TextureData& out)
     std::string lower = utf8Path;
     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
     if (lower.ends_with(".dds"))
-        return DecodeDDS(bytes, utf8Path, out);
+        return DecodeDDS(bytes, utf8Path, out, flipVertically);
 
     // Se fuerza RGBA (4 canales) porque una imagen de 1 o 2 canales (grises), o de 3 con ancho no
     // multiplo de 4, se subiria con un formato o una alineacion que no le corresponde.
-    stbi_set_flip_vertically_on_load(true);
+    stbi_set_flip_vertically_on_load(flipVertically);
     int w = 0, h = 0, channels = 0;
     unsigned char* img = stbi_load_from_memory(bytes.data(), int(bytes.size()), &w, &h, &channels, 4);
     if (!img)
@@ -58,6 +59,55 @@ bool DecodeImageFile(const std::string& utf8Path, TextureData& out)
 
     Console::LogInfo("stb_image: textura decodificada %s (%dx%d, %d canales)", utf8Path.c_str(), w, h, channels);
     return true;
+}
+
+// Voltea en horizontal un nivel RGBA8, en el sitio.
+static void FlipRGBA8X(std::vector<uint8_t>& px, uint32_t w, uint32_t h)
+{
+    const size_t row = size_t(w) * 4;
+    for (uint32_t y = 0; y < h; ++y)
+        for (uint32_t x = 0; x < w / 2; ++x)
+        {
+            const auto a = px.begin() + y * row + x * 4;
+            std::swap_ranges(a, a + 4, px.begin() + y * row + (w - 1 - x) * 4);
+        }
+}
+
+bool DecodeImageFile(const std::string& utf8Path, TextureData& out, const TextureImportOptions& options)
+{
+    // El flip Y se hace al decodificar: es no voltear (stb_image y DDS ya voltean para OpenGL).
+    if (!DecodeRaw(utf8Path, out, !options.flipY)) return false;
+    out.sampler = options.sampler;
+    if (!options.flipX) return true;
+
+    // En horizontal, los bloques DXT habria que reordenarlos por dentro: no compensa.
+    if (out.format != TextureData::Format::RGBA8)
+    {
+        Console::LogInfo("Textura: el flip X no se aplica a los DDS comprimidos (DXT): %s", utf8Path.c_str());
+        return true;
+    }
+    uint32_t w = out.width, h = out.height;
+    for (auto& mip : out.mips)
+    {
+        FlipRGBA8X(mip, w, h);
+        w = std::max(1u, w / 2);
+        h = std::max(1u, h / 2);
+    }
+    return true;
+}
+
+void ApplySampler(GLuint texture, const TextureSampler& sampler)
+{
+    const auto wrap = [](TextureWrap w) {
+        return GLint(w == TextureWrap::Clamp ? GL_CLAMP_TO_EDGE : w == TextureWrap::Mirrored ? GL_MIRRORED_REPEAT : GL_REPEAT);
+    };
+    GLint minF = GL_LINEAR_MIPMAP_LINEAR, magF = GL_LINEAR;
+    if (sampler.filter == TextureFilter::Linear) minF = GL_LINEAR;
+    else if (sampler.filter == TextureFilter::Nearest) minF = magF = GL_NEAREST;
+    glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, minF);
+    glTextureParameteri(texture, GL_TEXTURE_MAG_FILTER, magF);
+    glTextureParameteri(texture, GL_TEXTURE_WRAP_S, wrap(sampler.wrapS));
+    glTextureParameteri(texture, GL_TEXTURE_WRAP_T, wrap(sampler.wrapT));
 }
 
 GLuint UploadTexture(const TextureData& data)
@@ -97,10 +147,7 @@ GLuint UploadTexture(const TextureData& data)
         glGenerateMipmap(GL_TEXTURE_2D);
     else
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, GLint(data.mips.size() - 1));
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
+    ApplySampler(tex, data.sampler);
     return tex;
 }

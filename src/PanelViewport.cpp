@@ -60,6 +60,7 @@ void Editor::DrawViewport()
         if (GameObject* hit = PickObject(rayOrigin, rayDir))
         {
             selectedObject = hit;
+            inspectAsset = false;
             revealSelection = true;   // la Hierarchy despliega sus padres
             Console::LogInfo("Seleccionado: %s", hit->name.c_str());
         }

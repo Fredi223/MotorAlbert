@@ -8,7 +8,7 @@
 
 namespace
 {
-    constexpr uint32_t VERSION = 1;                     // de .mesh y .tex (la de .model esta en el .h)
+    constexpr uint32_t VERSION = 1;                     // de .mesh (las de .tex y .model estan en el .h)
     constexpr uint32_t VERTEX_FLOATS = 11;              // pos3 normal3 uv2 color3 (ver Mesh::SetupMesh)
     constexpr uint32_t MAX_COUNT = 256u * 1024 * 1024;  // tope de cordura para un archivo corrupto
 
@@ -154,10 +154,13 @@ bool SaveTextureFile(const std::string& path, const TextureData& data)
 {
     Writer w;
     w.Put(TEX_MAGIC);
-    w.Put(VERSION);
+    w.Put(TEX_FORMAT_VERSION);
     w.Put(data.format);
     w.Put(data.width);
     w.Put(data.height);
+    w.Put(data.sampler.filter);
+    w.Put(data.sampler.wrapS);
+    w.Put(data.sampler.wrapT);
     w.Put(uint32_t(data.mips.size()));
     for (const auto& mip : data.mips) w.PutArray(mip);
     return w.SaveTo(path);
@@ -166,13 +169,18 @@ bool SaveTextureFile(const std::string& path, const TextureData& data)
 bool LoadTextureFile(const std::string& path, TextureData& out)
 {
     Reader r;
-    if (!r.Load(path) || !r.Header(TEX_MAGIC)) return false;
+    if (!r.Load(path) || !r.Header(TEX_MAGIC, TEX_FORMAT_VERSION)) return false;   // un .tex v1 se reimporta
     out.format = r.Get<TextureData::Format>();
     out.width = r.Get<uint32_t>();
     out.height = r.Get<uint32_t>();
+    out.sampler.filter = r.Get<TextureFilter>();
+    out.sampler.wrapS = r.Get<TextureWrap>();
+    out.sampler.wrapT = r.Get<TextureWrap>();
     const uint32_t mipCount = r.Get<uint32_t>();
     if (!r.ok || mipCount == 0 || mipCount > 16 || out.width == 0 || out.height == 0 ||
-        out.width > 16384 || out.height > 16384 || uint32_t(out.format) > uint32_t(TextureData::Format::DXT5))
+        out.width > 16384 || out.height > 16384 || uint32_t(out.format) > uint32_t(TextureData::Format::DXT5) ||
+        uint32_t(out.sampler.filter) > uint32_t(TextureFilter::Nearest) ||
+        uint32_t(out.sampler.wrapS) > uint32_t(TextureWrap::Mirrored) || uint32_t(out.sampler.wrapT) > uint32_t(TextureWrap::Mirrored))
         return false;
 
     out.mips.resize(mipCount);

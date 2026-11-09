@@ -343,7 +343,10 @@ void Editor::DrawAssetGrid()
         const AssetIcon icon = IconOf(node, resources, uid);
         ImGui::PushID(node.assetPath.c_str());
         if (DrawAssetTile("tile", node.name, icon, uid, node.assetPath == selectedAsset))
+        {
             selectedAsset = node.assetPath;
+            inspectAsset = true;
+        }
         if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
             ActivateAsset(node);
 
@@ -364,6 +367,7 @@ void Editor::DrawAssetGrid()
         if (ImGui::BeginPopupContextItem())
         {
             selectedAsset = node.assetPath;
+            inspectAsset = true;
             DrawAssetContextMenu(node);
             ImGui::EndPopup();
         }
