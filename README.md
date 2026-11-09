@@ -88,10 +88,34 @@ ajustan en **Configuration > Input / Camera**.
   se pone azul en Play y naranja en pausa. Durante el Play no hay deshacer y no se puede
   guardar ni abrir escenas. El campo `x1.00` es la escala del tiempo de juego.
 - **Drag & drop** de un archivo (`.fbx`, `.png`, `.jpg`, `.tga`, `.bmp`, `.dds`) desde
-  cualquier carpeta a la ventana: se copia a `Assets/` y se importa a `Library/`. Un FBX se
-  añade a la escena; una textura se aplica al objeto seleccionado.
+  cualquier carpeta a la ventana: se copia a la carpeta abierta en el panel Assets (o a la
+  raíz de `Assets/` si el panel está cerrado) y se importa a `Library/`. Un FBX se añade a la
+  escena; una textura se aplica al objeto seleccionado.
 - **GameObject > Create Empty / Create Empty Child / 3D Object (Cube, Sphere, Cylinder,
   Cone, Plane) / Camera**. La cámara nueva se crea donde está la del editor.
+
+### Opciones de importado (Import Settings)
+
+Al hacer clic en una textura o un FBX del panel Assets, el Inspector muestra sus datos y sus
+**Import Settings**. Los cambios no se aplican hasta pulsar **Apply** (*Revert* los descarta)
+y se guardan en el `.meta` del asset, así que si se borra `Library/` se regenera igual.
+
+- **Texturas**: tamaño, formato y vista previa grande.
+  - *Filter*: Linear + mipmaps, Linear o Nearest.
+  - *Wrap S* / *Wrap T*: Repeat, Clamp to edge o Mirrored repeat.
+  - *Flip X* / *Flip Y*: voltean la imagen y la reimportan. En los DDS comprimidos (DXT)
+    solo se puede voltear en Y.
+  - Apply actualiza la textura al momento en todos los objetos que la usan.
+- **Modelos (FBX)**: número de mallas (con sus UIDs) y de nodos, y las cámaras y luces que
+  trae el archivo.
+  - *Global scale*: multiplica la escala de unidades del archivo.
+  - *Axis*: Y arriba (sin giro), Z arriba (-90° en X) o *Custom* (una rotación en grados).
+  - *Ignore cameras* / *Ignore lights*: sin marcar, cada cámara del FBX se importa como un
+    GameObject con componente Camera (con su FOV, near y far) y cada luz como un GameObject
+    vacío con su nombre (el motor no tiene luces). Prueba: *Street environment_V01.FBX* trae
+    una cámara (`Camera001`) y dos luces.
+  - Apply reimporta el modelo, pero lo que ya está en la escena no cambia: solo las
+    instancias nuevas (botón *Instantiate* o doble clic) salen con las opciones nuevas.
 
 ### Ventanas del editor
 
@@ -99,15 +123,25 @@ Todas se pueden acoplar (docking) y mostrar u ocultar desde el menú **View**.
 
 - **Viewport**: la escena. Muestra la cámara que hace el culling, cuántos objetos se
   dibujan y descartan, y cuántos candidatos y nodos visita el octree.
-- **Assets**: árbol de la carpeta `Assets/`. Un FBX se despliega con sus mallas. Las mallas
-  y texturas se arrastran al Inspector; doble clic en un FBX = añadirlo a la escena, en una
-  textura = aplicarla al seleccionado, en un `.scene` = abrirlo. Clic derecho > *Delete*
-  borra el asset, su `.meta` y sus archivos de `Library/`. *Refresh* importa lo que se haya
-  copiado a mano.
+- **Assets**: explorador de la carpeta `Assets/`. A la izquierda, el árbol de carpetas; a la
+  derecha, el contenido de la carpeta actual en una rejilla, con un icono por tipo de archivo
+  y la **miniatura** de cada textura. Arriba, la ruta (cada parte lleva a su carpeta) y el
+  botón para subir.
+  - **Clic**: selecciona el asset y muestra sus datos e *Import Settings* en el Inspector.
+  - **Doble clic**: una carpeta se abre, un FBX se añade a la escena, una textura se aplica
+    al objeto seleccionado y un `.scene` se abre.
+  - **Arrastrar**: las texturas y las mallas al Inspector; los FBX y las texturas también al
+    Viewport.
+  - **Clic derecho** en un asset: sus acciones, *Show meshes* (en un FBX: ver sus mallas
+    para arrastrarlas al campo Mesh), *Show in Explorer* y *Delete* (borra el archivo, su
+    `.meta` y sus archivos de `Library/`; en una carpeta, todo lo que contiene, después de
+    decir cuántos archivos son). En el hueco: *New Folder*, *Refresh* y *Show in Explorer*.
+  - **Refresh** importa lo que se haya copiado a `Assets/` desde Windows y olvida lo que se
+    haya borrado.
 - **Resources**: todos los recursos (mallas, texturas, modelos) con su UID, su archivo de
   `Library/` y su **número de referencias**; los cargados en memoria salen en verde.
 - **Configuration**: información del sistema y de la GPU, ventana y VSync, frustum culling,
-  cámara del editor, filtro y wrap de las texturas, memoria y rendimiento.
+  cámara del editor, texturas cargadas (y su VRAM aproximada), memoria y rendimiento.
 - **Console**: log de todo lo que hace el motor (también sale en la terminal).
 - **View > Debug Draw**: AABBs (verde), octree (azul), rayo del picking (rojo) y frustums de
   las cámaras (amarillo; la culling camera en naranja).
@@ -116,6 +150,15 @@ Todas se pueden acoplar (docking) y mostrar u ocultar desde el menú **View**.
 
 Además de lo que pide la entrega:
 
+- **Gestor de recursos ampliado** (los requisitos de la entrega aplazada, hechos aunque se
+  entrega a tiempo):
+  - **Explorador de assets** con árbol de carpetas, rejilla con iconos y miniaturas,
+    *New Folder*, borrar carpetas enteras e importar en la carpeta abierta.
+  - **Opciones de importado** de texturas (filtro, wrap, flip) y de modelos (escala, ejes,
+    cámaras y luces), guardadas en el `.meta` (ver *Opciones de importado*).
+  - **Cámaras de los FBX** importadas como cámaras de juego.
+- **Color difuso del material**: los materiales del FBX que solo tienen color (sin textura)
+  se ven con su color, y se puede editar en el Inspector.
 - **Deshacer / rehacer** de cualquier cambio en la escena (transform, componentes,
   jerarquía, crear, borrar, duplicar, renombrar...), por snapshots, hasta 30 pasos.
 - **Picking por triángulos**: el octree y los AABB descartan, y el resultado final es el
@@ -131,13 +174,15 @@ Además de lo que pide la entrega:
 ## Comentarios para el profesor
 
 - **Formato propio (`Library/`)**: `Meshes/<uid>.mesh` (cabecera + vértices + índices),
-  `Textures/<uid>.tex` (RGBA8, o DXT con mipmaps si viene de un DDS) y `Models/<uid>.model`
-  (el árbol de nodos del FBX con el transform, los UIDs de malla y textura y el color del
-  material de cada nodo).
+  `Textures/<uid>.tex` (RGBA8, o DXT con mipmaps si viene de un DDS, y el filtro y el wrap
+  de sus opciones de importado) y `Models/<uid>.model` (el árbol de nodos del FBX con el
+  transform, los UIDs de malla y textura, el color del material y, si es una cámara, su FOV,
+  near y far). Cada formato tiene versión: un archivo de una versión anterior se reimporta
+  solo, con los mismos UIDs.
   Assimp y stb_image solo se usan al importar; el resto del tiempo todo se carga de
   `Library/`. Las primitivas también son recursos (con UIDs fijos 1–5).
-- **`.meta`**: cada asset tiene un `.meta` (JSON) con su UID, su fecha y, en los FBX, los
-  UIDs de sus mallas. Al arrancar se importa lo que no tiene `.meta`, lo que ha cambiado y lo
+- **`.meta`**: cada asset tiene un `.meta` (JSON) con su UID, su fecha, sus opciones de
+  importado (`"import"`) y, en los FBX, los UIDs de sus mallas. Al arrancar se importa lo que no tiene `.meta`, lo que ha cambiado y lo
   que falta en `Library/`. Si se borra `Library/`, se regenera con los mismos UIDs, así que
   las escenas guardadas siguen funcionando.
 - **Conteo de referencias**: los componentes guardan un `shared_ptr` al recurso y el gestor
@@ -159,7 +204,11 @@ Además de lo que pide la entrega:
   y `UndoHistory`.
 - El código del motor compila sin avisos con `/W4`.
 - **Street environment** se instancia al arrancar desde su `.model` de `Library/`. La Baker
-  House necesita un giro de +90° en X que se aplica al importarla.
+  House necesita un giro de +90° en X: lo lleva su `.meta` como opción de importado (*Axis:
+  Custom*).
+- Al compilar, `cmake/CopyAssets.cmake` copia `Assets/` junto al `.exe`, pero solo lo que ha
+  cambiado y sin pisar los `.meta` que ya hay allí (así no se pierden las opciones aplicadas
+  desde el editor ni se reimporta todo en cada build).
 
 ## Licencia
 
@@ -233,5 +282,6 @@ src/vendor/     Dependencias que no vienen de vcpkg (GLAD, generado para GL 4.6 
 Assets/         Modelos, texturas, escenas y sus .meta; se copian junto al .exe
 Licences/       Licencias de las librerías de terceros
 docs/           Material de la asignatura
+cmake/          Script que copia Assets/ junto al .exe al compilar
 CMakeLists.txt, CMakePresets.json, vcpkg.json, vcpkg-configuration.json   Buildsystem
 ```

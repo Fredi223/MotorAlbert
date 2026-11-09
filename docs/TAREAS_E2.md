@@ -23,4 +23,10 @@ Grupo de un solo integrante: todas las tareas son de **Albert Frederic Bailen Ru
 | 16 | Adaptar deshacer / rehacer a la jerarquía y a los recursos | Albert | 3 | |
 | 17 | Pruebas y corrección de bugs | Albert | 5 | |
 | 18 | Entrega: limpieza (/W4), README, licencias, build Release, zip y release | Albert | 3 | |
-| | **Total** | | **83** | |
+| 19 | Color difuso del material (materiales del FBX sin textura, .model v2) | Albert | 2 | |
+| 20 | Explorador de assets: árbol de carpetas, rejilla con iconos y miniaturas, New Folder, borrar carpetas | Albert | 5 | |
+| 21 | Opciones de importado de texturas (filtro, wrap, flip; .tex v2) e Inspector del asset | Albert | 5 | |
+| 22 | Opciones de importado de modelos (escala, ejes, cámaras y luces; .model v3) | Albert | 5 | |
+| 23 | Regenerar Library desde Assets + .meta, copia de Assets en la build y Refresh | Albert | 2 | |
+| 24 | Entrega v2.0 con los extras: README, lista de tareas, zip y release | Albert | 2 | |
+| | **Total** | | **104** | |
