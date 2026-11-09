@@ -1,5 +1,21 @@
 {
-  "format": 2,
+  "format": 3,
+  "import": {
+    "axis": "y_up",
+    "customRotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "globalScale": 1.0,
+    "ignoreCameras": true,
+    "ignoreLights": true
+  },
+  "info": {
+    "cameras": 0,
+    "lights": 0,
+    "nodes": 3
+  },
   "meshes": [
     {
       "name": "Lingotes_m",
@@ -10,7 +26,7 @@
       "uid": 3165639152632983617
     }
   ],
-  "timestamp": 134386495495067119,
+  "timestamp": 134386922829709254,
   "type": "model",
   "uid": 1174902354672385561
 }

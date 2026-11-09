@@ -228,9 +228,7 @@ void Editor::DrawAssetToolbar()
     ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetContentRegionMax().x - refreshWidth));
     if (ImGui::Button("Refresh"))
     {
-        thumbnails.clear();
-        resources.ImportAll();   // importa lo que se haya copiado a Assets/ desde fuera del motor
-        assetTreeDirty = true;
+        RefreshAssets();
     }
     ImGui::SetItemTooltip("Importa lo que se haya copiado a Assets/ desde fuera del motor");
 }
@@ -426,6 +424,14 @@ void Editor::DrawAssetContextMenu(const AssetNode& node)
     if (ImGui::MenuItem("Delete...")) RequestDeleteAsset(node);
 }
 
+void Editor::RefreshAssets()
+{
+    thumbnails.clear();
+    // Importa lo que se haya copiado a Assets/ desde fuera del motor y olvida lo que se haya borrado.
+    ReleaseRemovedResources(resources.ImportAll());
+    assetTreeDirty = true;
+}
+
 void Editor::RequestDeleteAsset(const AssetNode& node)
 {
     assetToDelete = node.assetPath;
@@ -471,6 +477,11 @@ void Editor::DeleteAsset(const std::string& assetPath)
     if (IsSameOrInside(currentScene, assetPath)) SetCurrentScene({});   // la escena abierta queda sin archivo
     if (IsSameOrInside(currentFolder, assetPath)) { currentFolder = ParentOf(assetPath); revealFolder = true; }
     if (IsSameOrInside(selectedAsset, assetPath)) selectedAsset.clear();
+    ReleaseRemovedResources(removed);
+}
+
+void Editor::ReleaseRemovedResources(const std::vector<uint64_t>& removed)
+{
     if (removed.empty()) return;   // no habia recursos (p. ej. solo un .scene): nadie los usa y el undo no cambia
     const std::set<uint64_t> gone(removed.begin(), removed.end());
 
@@ -603,9 +614,7 @@ void Editor::DrawAssets()
             if (ImGui::MenuItem("New Folder...")) openNewFolderPopup = true;
             if (ImGui::MenuItem("Refresh"))
             {
-                thumbnails.clear();
-                resources.ImportAll();
-                assetTreeDirty = true;
+                RefreshAssets();
             }
             if (ImGui::MenuItem("Show in Explorer"))
             {

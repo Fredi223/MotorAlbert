@@ -105,10 +105,12 @@ endif()
 # Assets/ se copia junto al ejecutable: el motor la busca ahi (SDL_GetBasePath), tanto en
 # build/ como en la carpeta de entrega, y crea Library/ a su lado al arrancar (no se copia: se
 # genera). Es un target propio (y no un POST_BUILD del ejecutable) para que se copie tambien
-# cuando solo cambian los assets y el .exe no se vuelve a enlazar.
+# cuando solo cambian los assets y el .exe no se vuelve a enlazar. cmake/CopyAssets.cmake solo
+# copia lo que ha cambiado y no pisa los .meta que ya hay junto al exe (ver el script).
 add_custom_target(CopyResources ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/Assets $<TARGET_FILE_DIR:MotorAlbert>/Assets
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/Assets -DDST=$<TARGET_FILE_DIR:MotorAlbert>/Assets
+        -P ${CMAKE_SOURCE_DIR}/cmake/CopyAssets.cmake
     COMMENT "Copiando Assets junto al ejecutable"
+    VERBATIM
 )
 add_dependencies(CopyResources MotorAlbert)

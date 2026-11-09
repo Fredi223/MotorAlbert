@@ -1,5 +1,21 @@
 {
-  "format": 2,
+  "format": 3,
+  "import": {
+    "axis": "y_up",
+    "customRotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "globalScale": 1.0,
+    "ignoreCameras": true,
+    "ignoreLights": true
+  },
+  "info": {
+    "cameras": 1,
+    "lights": 2,
+    "nodes": 32
+  },
   "meshes": [
     {
       "name": "City_building_004",
@@ -122,7 +138,7 @@
       "uid": 10056640534446532461
     }
   ],
-  "timestamp": 134386495495955028,
+  "timestamp": 134386922830589662,
   "type": "model",
   "uid": 5606642716347757407
 }

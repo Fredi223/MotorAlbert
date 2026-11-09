@@ -1,5 +1,5 @@
 {
-  "format": 2,
+  "format": 3,
   "import": {
     "axis": "custom",
     "customRotation": [
@@ -11,6 +11,11 @@
     "ignoreCameras": true,
     "ignoreLights": true
   },
+  "info": {
+    "cameras": 0,
+    "lights": 0,
+    "nodes": 3
+  },
   "meshes": [
     {
       "name": "Untitled.001",
@@ -21,7 +26,7 @@
       "uid": 2182500833614012440
     }
   ],
-  "timestamp": 134386495494886887,
+  "timestamp": 134386922829518302,
   "type": "model",
   "uid": 3400159209156613884
 }

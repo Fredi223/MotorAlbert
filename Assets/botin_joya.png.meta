@@ -1,5 +1,13 @@
 {
-  "timestamp": 134386423900713537,
+  "format": 2,
+  "import": {
+    "filter": "linear_mipmaps",
+    "flipX": false,
+    "flipY": false,
+    "wrapS": "repeat",
+    "wrapT": "repeat"
+  },
+  "timestamp": 134386922829598424,
   "type": "texture",
   "uid": 13325189197408425550
 }

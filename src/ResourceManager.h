@@ -48,7 +48,9 @@ public:
     void Init(const std::string& baseDir);
 
     // Recorre Assets/ e importa lo que no este importado o haya cambiado (Init y el boton Refresh).
-    void ImportAll();
+    // Antes quita del registro (y de Library) los assets que ya no existen en disco, borrados desde
+    // fuera del motor, y devuelve sus UIDs: quien llama debe soltar las referencias que tenga a ellos.
+    std::vector<uint64_t> ImportAll();
 
     // Importa un archivo que esta dentro de Assets/ (si no estaba importado o ha cambiado) y devuelve
     // el UID de su recurso principal: la textura o el modelo. 0 si no es un formato soportado o falla.

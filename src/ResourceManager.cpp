@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <set>
 #include <vector>
 #include <nlohmann/json.hpp>
 
@@ -200,8 +201,23 @@ void ResourceManager::Init(const std::string& baseDir)
     ImportAll();
 }
 
-void ResourceManager::ImportAll()
+std::vector<uint64_t> ResourceManager::ImportAll()
 {
+    // Lo registrado cuyo asset ya no esta (borrado desde Windows): fuera, como un Delete del editor.
+    std::vector<uint64_t> removed;
+    {
+        std::error_code existsEc;
+        std::set<std::string> missing;
+        for (const auto& [uid, e] : entries)
+            if (!e.assetPath.empty() && !fs::exists(assetsDir / FromUtf8(e.assetPath), existsEc)) missing.insert(e.assetPath);
+        for (const std::string& assetPath : missing)
+        {
+            Console::LogInfo("Assets/%s ya no existe en disco: se quita del registro", assetPath.c_str());
+            const std::vector<uint64_t> r = DeleteAsset(assetPath);
+            removed.insert(removed.end(), r.begin(), r.end());
+        }
+    }
+
     // Todo Assets/: primero las texturas, para que los FBX encuentren las suyas ya importadas.
     std::error_code ec;
     std::vector<fs::path> textures, models;
@@ -217,6 +233,7 @@ void ResourceManager::ImportAll()
     for (const fs::path& p : models) ImportModel(p, {});
 
     Console::LogInfo("Recursos: %zu registrados (%zu texturas y %zu modelos en Assets/)", entries.size(), textures.size(), models.size());
+    return removed;
 }
 
 uint64_t ResourceManager::ImportAsset(const std::string& absolutePath)

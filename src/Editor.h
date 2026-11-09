@@ -123,6 +123,10 @@ private:
     // los usan. Vacia el historial de undo: borrar un archivo no se puede deshacer, y un snapshot podria
     // devolver un recurso que ya no existe.
     void DeleteAsset(const std::string& assetPath);
+    // Los GameObjects que usaban esos recursos (ya fuera del registro) se quedan sin ellos, y el
+    // historial de undo se vacia (sus snapshots tambien los retienen).
+    void ReleaseRemovedResources(const std::vector<uint64_t>& removed);
+    void RefreshAssets();   // boton y menu Refresh
     void DrawHierarchy();
     void DrawViewport();
 

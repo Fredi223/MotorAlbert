@@ -1,5 +1,21 @@
 {
-  "format": 2,
+  "format": 3,
+  "import": {
+    "axis": "y_up",
+    "customRotation": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "globalScale": 1.0,
+    "ignoreCameras": true,
+    "ignoreLights": true
+  },
+  "info": {
+    "cameras": 0,
+    "lights": 0,
+    "nodes": 3
+  },
   "meshes": [
     {
       "name": "Calavera_Oro_m",
@@ -14,7 +30,7 @@
       "uid": 8885599387858123886
     }
   ],
-  "timestamp": 134386495495042065,
+  "timestamp": 134386922829679251,
   "type": "model",
   "uid": 14695901447497125143
 }
